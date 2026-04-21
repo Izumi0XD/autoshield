@@ -1,0 +1,7 @@
+2026-04-19 05:46:58,826 [INFO] Rule engine loaded 25 rules (v1)
+2026-04-19 05:46:58,829 [INFO] AutoShield Agent starting | files=['test_website/access.log']
+2026-04-19 05:46:58,830 [INFO] Format=nginx | Replay=False | TestOnly=False
+2026-04-19 05:46:58,830 [INFO] Starting telemetry stream...
+2026-04-19 05:47:28,830 [INFO] Agent stats: {'lines_read': 0, 'parsed': 0, 'detections': 0, 'skipped': 0} | API: {'sent': 0, 'errors': 0, 'detections': 0}
+2026-04-19 05:47:58,830 [INFO] Agent stats: {'lines_read': 0, 'parsed': 0, 'detections': 0, 'skipped': 0} | API: {'sent': 0, 'errors': 0, 'detections': 0}
+2026-04-19 05:48:28,830 [INFO] Agent stats: {'lines_read': 0, 'parsed': 0, 'detections': 0, 'skipped': 0} | API: {'sent': 0, 'errors': 0, 'detections': 0}

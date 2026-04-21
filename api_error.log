@@ -1,0 +1,14 @@
+2026-04-21 04:03:54,172 [INFO] Rule engine loaded 25 rules (v1)
+2026-04-21 04:03:54,178 [WARNING] Not running as root — iptables disabled. Using in-memory blocklist.
+2026-04-21 04:03:54,179 [INFO] DB initialized at autoshield.db
+2026-04-21 04:03:54,298 [INFO] DB initialized at autoshield.db
+2026-04-21 04:03:54,299 [INFO] DB initialized at autoshield.db
+2026-04-21 04:03:54,360 [INFO] AutoShield API starting on port 8502
+2026-04-21 04:04:10,739 [INFO] Report saved: /tmp/autoshield_report_site_demo_1776724450.pdf
+2026-04-21 04:07:03,487 [WARNING] 🛡️ DDoS SHIELD ENGAGED by site_demo
+2026-04-21 04:08:29,183 [WARNING] 🚫 BLOCKED 198.51.100.254 | DDoS [CRITICAL] | expires 05:08:29 | method=in-memory
+2026-04-21 04:08:29,183 [WARNING] 🛡️ DDoS auto-blocked 198.51.100.254 (36 req/10s)
+/home/izumi/Desktop/Testings/Cyber_Project/api_layer.py:576: PydanticDeprecatedSince20: The `dict` method is deprecated; use `model_dump` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+  result = _process_event(ev.dict(), site)
+2026-04-21 04:12:22,281 [WARNING] 🚫 BLOCKED 91.132.147.22 | CMDi [CRITICAL] | expires 05:12:22 | method=in-memory
+2026-04-21 04:12:39,524 [WARNING] 🚫 BLOCKED 203.0.113.91 | SQLi [CRITICAL] | expires 05:12:39 | method=in-memory

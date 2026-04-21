@@ -1,0 +1,9 @@
+.ops-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+.ops-report-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+.ops-includes { background: rgba(8,11,16,.5); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-top: 14px; font-family: var(--mono); font-size: 11px; line-height: 2; color: var(--muted); }
+.alert-channel { background: rgba(8,11,16,.5); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+.alert-channel-ok { border-color: rgba(0,255,156,.2); }
+.alert-rules { background: rgba(8,11,16,.5); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; font-family: var(--mono); font-size: 10px; line-height: 2; color: var(--muted); }
+.session-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.session-stat { background: rgba(8,11,16,.5); border: 1px solid var(--line); border-radius: 8px; padding: 12px; text-align: center; }
+@media (max-width: 768px) { .ops-grid { grid-template-columns: 1fr; } }

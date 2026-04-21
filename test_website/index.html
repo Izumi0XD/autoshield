@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus Solutions | Edge Portal</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  
+  <nav class="navbar">
+    <div class="logo">
+      <div class="glow-orb"></div>
+      NEXUS
+    </div>
+    <div class="nav-links">
+      <a href="#home">Home</a>
+      <a href="#products">Products</a>
+      <a href="#portal">Employee Portal</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <section class="hero" id="home">
+      <h1>Accelerate your digital <br><span class="gradient-text">infrastructure.</span></h1>
+      <p>Secure, globalized, and enterprise-ready application deployment at the speed of thought.</p>
+      
+      <div class="search-box">
+        <!-- Purposely left vulnerable-looking for WAF testing -->
+        <form action="/search" method="GET" class="glass-form">
+          <input type="text" name="q" placeholder="Search the database..." autocomplete="off">
+          <button type="submit">Search</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="portal-section" id="portal">
+      <div class="glass-panel">
+        <h2>Secure Employee Portal</h2>
+        <p class="subtitle">Access restricted infrastructure modules.</p>
+        
+        <form action="/login" method="POST" class="glass-form auth-form">
+          <div class="input-group">
+            <label>Corporate ID</label>
+            <input type="text" name="username" placeholder="nexus_usr_..." required />
+          </div>
+          <div class="input-group">
+            <label>Passcode</label>
+            <input type="password" name="password" placeholder="••••••••" required />
+          </div>
+          <button type="submit" class="primary-btn">Authenticate →</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <div class="ambient-glow right"></div>
+  <div class="ambient-glow left"></div>
+
+</body>
+</html>

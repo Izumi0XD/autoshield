@@ -1,0 +1,17 @@
+{
+  "admin": {
+    "password": "admin123",
+    "name": "AutoShield Admin",
+    "email": ""
+  },
+  "analyst": {
+    "password": "analyst123",
+    "name": "SOC Analyst",
+    "email": ""
+  },
+  "izumi": {
+    "password": "123456",
+    "name": "izumi",
+    "email": "izumi@gmail.com"
+  }
+}

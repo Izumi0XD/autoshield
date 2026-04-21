@@ -1,0 +1,17 @@
+nohup: ignoring input
+/home/izumi/.local/lib/python3.14/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (6.0.0.post1)/charset_normalizer (3.4.7) doesn't match a supported version!
+  warnings.warn(
+2026-04-21 18:04:22,000 [WARNING] reportlab not installed. Run: pip install reportlab
+2026-04-21 18:04:22,022 [INFO] Rule engine loaded 25 rules (v1)
+2026-04-21 18:04:22,029 [WARNING] Not running as root — iptables disabled. Using in-memory blocklist.
+2026-04-21 18:04:22,031 [INFO] DB initialized at autoshield.db
+2026-04-21 18:04:22,175 [INFO] DB initialized at autoshield.db
+2026-04-21 18:04:22,175 [INFO] DB initialized at autoshield.db
+2026-04-21 18:04:22,242 [INFO] AutoShield API starting on port 8502
+2026-04-21 18:46:58,787 [WARNING] 🚫 BLOCKED 109.70.100.18 | SQLi [CRITICAL] | expires 19:46:58 | method=in-memory
+2026-04-21 18:46:58,791 [WARNING] 🚫 BLOCKED 45.155.205.17 | SQLi [CRITICAL] | expires 19:46:58 | method=in-memory
+2026-04-21 18:46:58,791 [WARNING] 🚫 BLOCKED 176.10.104.240 | SQLi [CRITICAL] | expires 19:46:58 | method=in-memory
+2026-04-21 18:46:58,791 [WARNING] 🚫 BLOCKED 91.132.147.22 | SQLi [CRITICAL] | expires 19:46:58 | method=in-memory
+2026-04-21 18:48:28,866 [WARNING] 🚫 BLOCKED 198.51.100.254 | DDoS [CRITICAL] | expires 19:48:28 | method=in-memory
+2026-04-21 18:51:56,110 [WARNING] 🚫 BLOCKED 77.247.181.163 | CMDi [CRITICAL] | expires 19:51:56 | method=in-memory
+2026-04-21 19:13:39,500 [INFO] User premium.demo upgraded to premium via checkout

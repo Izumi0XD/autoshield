@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+<head>
+    
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.3/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.2/dist/css/bootstrap.min.css"/>
+    <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.0/css/bootstrap-glyphicons.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.2.0/css/all.min.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css"/>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/python-visualization/folium/folium/templates/leaflet.awesome.rotate.min.css"/>
+    
+            <meta name="viewport" content="width=device-width,
+                initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+            <style>
+                #map_33e3463640999ee0109c6531e02a95d2 {
+                    position: relative;
+                    width: 100.0%;
+                    height: 100.0%;
+                    left: 0.0%;
+                    top: 0.0%;
+                }
+                .leaflet-container { font-size: 1rem; }
+            </style>
+
+            <style>html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+            </style>
+
+            <style>#map {
+                position:absolute;
+                top:0;
+                bottom:0;
+                right:0;
+                left:0;
+                }
+            </style>
+
+            <script>
+                L_NO_TOUCH = false;
+                L_DISABLE_3D = false;
+            </script>
+
+        
+</head>
+<body>
+    
+    
+    <div style="position:fixed;bottom:30px;left:30px;background:#1e1e1e;
+                border:1px solid #444;padding:12px;border-radius:8px;
+                font-family:monospace;color:#e6edf3;font-size:12px;z-index:9999">
+      <b>🛡️ AutoShield Threat Map</b><br/><br/>
+      <span style="color:#ef4444">●</span> CRITICAL &nbsp;
+      <span style="color:#f97316">●</span> HIGH<br/>
+      <span style="color:#eab308">●</span> MEDIUM &nbsp;
+      <span style="color:#22c55e">●</span> LOW<br/><br/>
+      💉 SQLi &nbsp; 📝 XSS<br/>
+      📂 LFI &nbsp; 💻 CMDi
+    </div>
+    
+    
+            <div class="folium-map" id="map_33e3463640999ee0109c6531e02a95d2" ></div>
+        
+</body>
+<script>
+    
+    
+            var map_33e3463640999ee0109c6531e02a95d2 = L.map(
+                "map_33e3463640999ee0109c6531e02a95d2",
+                {
+                    center: [20.5937, 78.9629],
+                    crs: L.CRS.EPSG3857,
+                    ...{
+  "zoom": 3,
+  "zoomControl": true,
+  "preferCanvas": false,
+}
+
+                }
+            );
+
+            
+
+        
+    
+            var tile_layer_b4f7dc4fd6da68643b41e9ef54290198 = L.tileLayer(
+                "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+                {
+  "minZoom": 0,
+  "maxZoom": 20,
+  "maxNativeZoom": 20,
+  "noWrap": false,
+  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors \u0026copy; \u003ca href=\"https://carto.com/attributions\"\u003eCARTO\u003c/a\u003e",
+  "subdomains": "abcd",
+  "detectRetina": false,
+  "tms": false,
+  "opacity": 1,
+}
+
+            );
+        
+    
+            tile_layer_b4f7dc4fd6da68643b41e9ef54290198.addTo(map_33e3463640999ee0109c6531e02a95d2);
+        
+    
+            var circle_marker_5e9b547847ce2334a9560459cc941315 = L.circleMarker(
+                [28.6139, 77.209],
+                {"bubblingMouseEvents": true, "color": "#ef4444", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#ef4444", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 11, "stroke": true, "weight": 3}
+            ).addTo(map_33e3463640999ee0109c6531e02a95d2);
+        
+    
+        var popup_85d29628eb133b6de32ec415f7b083be = L.popup({
+  "maxWidth": 280,
+});
+
+        
+            
+                var html_a2df25e7b914f903203facb496128d27 = $(`<div id="html_a2df25e7b914f903203facb496128d27" style="width: 100.0%; height: 100.0%;">         <div style="font-family:monospace;background:#1e1e1e;color:#e6edf3;                     padding:12px;border-radius:6px;min-width:220px">           <b style="color:#ef4444">⚠ CRITICAL ATTACK</b><br/>           <hr style="border-color:#444;margin:6px 0"/>           <b>IP:</b> 192.168.1.1<br/>           <b>Location:</b> New Delhi, India<br/>           <b>ISP:</b> Demo ISP<br/>           <b>Attacks:</b> 1 (SQLi)<br/>           <b>Status:</b> <span style="color:#22c55e">BLOCKED</span><br/>           <b>Last:</b> 3.005<br/>           <b>CVE:</b> CVE-2023-23752         </div>         </div>`)[0];
+                popup_85d29628eb133b6de32ec415f7b083be.setContent(html_a2df25e7b914f903203facb496128d27);
+            
+        
+
+        circle_marker_5e9b547847ce2334a9560459cc941315.bindPopup(popup_85d29628eb133b6de32ec415f7b083be)
+        ;
+
+        
+    
+    
+            circle_marker_5e9b547847ce2334a9560459cc941315.bindTooltip(
+                `<div>
+                     💉 192.168.1.1 (1 attacks)
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var circle_marker_e0e99db1c54752b7b0aaf8466cdc8d72 = L.circleMarker(
+                [39.9042, 116.4074],
+                {"bubblingMouseEvents": true, "color": "#f97316", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#f97316", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 11, "stroke": true, "weight": 3}
+            ).addTo(map_33e3463640999ee0109c6531e02a95d2);
+        
+    
+        var popup_32b98b1bab0199af2e2b19ef896a7a1e = L.popup({
+  "maxWidth": 280,
+});
+
+        
+            
+                var html_5bfdb8645dba7432fa979df39cef9b99 = $(`<div id="html_5bfdb8645dba7432fa979df39cef9b99" style="width: 100.0%; height: 100.0%;">         <div style="font-family:monospace;background:#1e1e1e;color:#e6edf3;                     padding:12px;border-radius:6px;min-width:220px">           <b style="color:#f97316">⚠ HIGH ATTACK</b><br/>           <hr style="border-color:#444;margin:6px 0"/>           <b>IP:</b> 192.168.1.2<br/>           <b>Location:</b> Beijing, China<br/>           <b>ISP:</b> China Telecom<br/>           <b>Attacks:</b> 1 (XSS)<br/>           <b>Status:</b> <span style="color:#22c55e">BLOCKED</span><br/>           <b>Last:</b> 3.005<br/>           <b>CVE:</b> CVE-2023-32315         </div>         </div>`)[0];
+                popup_32b98b1bab0199af2e2b19ef896a7a1e.setContent(html_5bfdb8645dba7432fa979df39cef9b99);
+            
+        
+
+        circle_marker_e0e99db1c54752b7b0aaf8466cdc8d72.bindPopup(popup_32b98b1bab0199af2e2b19ef896a7a1e)
+        ;
+
+        
+    
+    
+            circle_marker_e0e99db1c54752b7b0aaf8466cdc8d72.bindTooltip(
+                `<div>
+                     📝 192.168.1.2 (1 attacks)
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_a9642c542bdf03e36a99cd0604d5c626 = L.polyline(
+                [[39.9042, 116.4074], [28.6139, 77.209]],
+                {"bubblingMouseEvents": true, "color": "#f97316", "dashArray": "5 5", "dashOffset": null, "fill": false, "fillColor": "#f97316", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.4, "smoothFactor": 1.0, "stroke": true, "weight": 1.5}
+            ).addTo(map_33e3463640999ee0109c6531e02a95d2);
+        
+    
+            var circle_marker_f3b1da7ec1f4c9da272a0705b57f7299 = L.circleMarker(
+                [55.7558, 37.6173],
+                {"bubblingMouseEvents": true, "color": "#ef4444", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#ef4444", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 11, "stroke": true, "weight": 3}
+            ).addTo(map_33e3463640999ee0109c6531e02a95d2);
+        
+    
+        var popup_0d0ae47f5874b5daa3ad7cd0bc422adc = L.popup({
+  "maxWidth": 280,
+});
+
+        
+            
+                var html_bcb722af0681a7a8abd90e999c47472f = $(`<div id="html_bcb722af0681a7a8abd90e999c47472f" style="width: 100.0%; height: 100.0%;">         <div style="font-family:monospace;background:#1e1e1e;color:#e6edf3;                     padding:12px;border-radius:6px;min-width:220px">           <b style="color:#ef4444">⚠ CRITICAL ATTACK</b><br/>           <hr style="border-color:#444;margin:6px 0"/>           <b>IP:</b> 192.168.1.3<br/>           <b>Location:</b> Moscow, Russia<br/>           <b>ISP:</b> Rostelecom<br/>           <b>Attacks:</b> 1 (LFI)<br/>           <b>Status:</b> <span style="color:#22c55e">BLOCKED</span><br/>           <b>Last:</b> 3.005<br/>           <b>CVE:</b> CVE-2023-29489         </div>         </div>`)[0];
+                popup_0d0ae47f5874b5daa3ad7cd0bc422adc.setContent(html_bcb722af0681a7a8abd90e999c47472f);
+            
+        
+
+        circle_marker_f3b1da7ec1f4c9da272a0705b57f7299.bindPopup(popup_0d0ae47f5874b5daa3ad7cd0bc422adc)
+        ;
+
+        
+    
+    
+            circle_marker_f3b1da7ec1f4c9da272a0705b57f7299.bindTooltip(
+                `<div>
+                     📂 192.168.1.3 (1 attacks)
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_6888ffdf378652639ba30ca9c756c3eb = L.polyline(
+                [[55.7558, 37.6173], [28.6139, 77.209]],
+                {"bubblingMouseEvents": true, "color": "#ef4444", "dashArray": "5 5", "dashOffset": null, "fill": false, "fillColor": "#ef4444", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.4, "smoothFactor": 1.0, "stroke": true, "weight": 1.5}
+            ).addTo(map_33e3463640999ee0109c6531e02a95d2);
+        
+    
+            var circle_marker_c6ff7a83df11b90c69e5e5d549b5f0b4 = L.circleMarker(
+                [39.0438, -77.4874],
+                {"bubblingMouseEvents": true, "color": "#ef4444", "dashArray": null, "dashOffset": null, "fill": true, "fillColor": "#ef4444", "fillOpacity": 0.7, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "opacity": 1.0, "radius": 11, "stroke": true, "weight": 3}
+            ).addTo(map_33e3463640999ee0109c6531e02a95d2);
+        
+    
+        var popup_03f3736401fdfff1c4089c9601c3a714 = L.popup({
+  "maxWidth": 280,
+});
+
+        
+            
+                var html_f23eee3d89db172fb6faa18777c1bc27 = $(`<div id="html_f23eee3d89db172fb6faa18777c1bc27" style="width: 100.0%; height: 100.0%;">         <div style="font-family:monospace;background:#1e1e1e;color:#e6edf3;                     padding:12px;border-radius:6px;min-width:220px">           <b style="color:#ef4444">⚠ CRITICAL ATTACK</b><br/>           <hr style="border-color:#444;margin:6px 0"/>           <b>IP:</b> 10.0.0.14<br/>           <b>Location:</b> Ashburn, United States<br/>           <b>ISP:</b> Amazon AWS<br/>           <b>Attacks:</b> 1 (CMDi)<br/>           <b>Status:</b> <span style="color:#22c55e">BLOCKED</span><br/>           <b>Last:</b> 3.005<br/>           <b>CVE:</b> CVE-2023-46604         </div>         </div>`)[0];
+                popup_03f3736401fdfff1c4089c9601c3a714.setContent(html_f23eee3d89db172fb6faa18777c1bc27);
+            
+        
+
+        circle_marker_c6ff7a83df11b90c69e5e5d549b5f0b4.bindPopup(popup_03f3736401fdfff1c4089c9601c3a714)
+        ;
+
+        
+    
+    
+            circle_marker_c6ff7a83df11b90c69e5e5d549b5f0b4.bindTooltip(
+                `<div>
+                     💻 10.0.0.14 (1 attacks)
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+            var poly_line_01d982ba3a2068b7a73c24e194b7d305 = L.polyline(
+                [[39.0438, -77.4874], [28.6139, 77.209]],
+                {"bubblingMouseEvents": true, "color": "#ef4444", "dashArray": "5 5", "dashOffset": null, "fill": false, "fillColor": "#ef4444", "fillOpacity": 0.2, "fillRule": "evenodd", "lineCap": "round", "lineJoin": "round", "noClip": false, "opacity": 0.4, "smoothFactor": 1.0, "stroke": true, "weight": 1.5}
+            ).addTo(map_33e3463640999ee0109c6531e02a95d2);
+        
+    
+            var marker_fee9805b588bec4296c66771f658f0cc = L.marker(
+                [28.6139, 77.209],
+                {
+}
+            ).addTo(map_33e3463640999ee0109c6531e02a95d2);
+        
+    
+            var icon_e7e27a9e2bee59655064adb9474cf740 = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "green",
+  "iconColor": "white",
+  "icon": "shield",
+  "prefix": "fa",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_597b78dc0e9a1b26af3ddd26a0534ae7 = L.popup({
+  "maxWidth": "100%",
+});
+
+        
+            
+                var html_bd5d5c6ee8346695063eae3a4ade8ed1 = $(`<div id="html_bd5d5c6ee8346695063eae3a4ade8ed1" style="width: 100.0%; height: 100.0%;">🛡️ AutoShield Protected Server</div>`)[0];
+                popup_597b78dc0e9a1b26af3ddd26a0534ae7.setContent(html_bd5d5c6ee8346695063eae3a4ade8ed1);
+            
+        
+
+        marker_fee9805b588bec4296c66771f658f0cc.bindPopup(popup_597b78dc0e9a1b26af3ddd26a0534ae7)
+        ;
+
+        
+    
+    
+            marker_fee9805b588bec4296c66771f658f0cc.bindTooltip(
+                `<div>
+                     🛡️ Protected Server
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_fee9805b588bec4296c66771f658f0cc.setIcon(icon_e7e27a9e2bee59655064adb9474cf740);
+            
+</script>
+</html>

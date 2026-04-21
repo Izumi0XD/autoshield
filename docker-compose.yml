@@ -1,0 +1,146 @@
+version: "3.9"
+
+# Globally define logging so we don't repeat it for every service
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: autoshield-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - backend
+      - api
+    restart: unless-stopped
+    networks:
+      - autoshield
+    logging: *default-logging
+
+  api:
+    build: .
+    image: autoshield-api:latest
+    container_name: autoshield-api
+    
+    # 🔴 SECURITY FIX: Bind strictly to localhost. 
+    # External traffic MUST go through the Nginx proxy; nobody can hit the API directly.
+    ports:
+      - "127.0.0.1:8503:8503" 
+      
+    networks:
+      - autoshield
+    environment:
+      - AUTOSHIELD_API_PORT=8503
+      - DATABASE_URL=postgresql://user:password@db:5432/autoshield
+      - AUTOSHIELD_API_KEY=${AUTOSHIELD_API_KEY:-change_me_now}
+      # Alerts
+      - TWILIO_SID=${TWILIO_SID:-}
+      - TWILIO_TOKEN=${TWILIO_TOKEN:-}
+      - TWILIO_FROM=${TWILIO_FROM:-whatsapp:+14155238886}
+      - ALERT_WA_TO=${ALERT_WA_TO:-}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - ALERT_EMAIL_TO=${ALERT_EMAIL_TO:-}
+    restart: unless-stopped
+    logging: *default-logging
+    
+    depends_on:
+      db:
+        condition: service_healthy
+        
+    # 🔴 FIX: Explicit /health endpoint to verify the app is actually ready
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8503/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      
+    volumes:
+      - ./logs:/app/logs
+      - /tmp:/tmp
+
+  nginx-agent:
+    build: .
+    container_name: autoshield-agent
+    
+    # ⚠️ PRIVILEGED COMPONENT / ROOT-LEVEL TRUST: 
+    # Runs on the host network to manipulate the host's iptables/ipset.
+    # A compromise of this container is equivalent to root access on the host.
+    network_mode: "host" 
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      
+    environment:
+      - AUTOSHIELD_API_KEY=${AUTOSHIELD_API_KEY:-change_me_now}
+    volumes:
+      - nginx_logs:/var/log/nginx:ro
+      
+    depends_on:
+      api:
+        condition: service_healthy
+        
+    restart: unless-stopped
+    logging: *default-logging
+    command: [
+      "python", "nginx_agent.py",
+      "--log", "/var/log/nginx/access.log",
+      "--api", "http://127.0.0.1:8503",
+      "--key", "${AUTOSHIELD_API_KEY:-change_me_now}"
+    ]
+
+  dashboard:
+    build: ./autoshield-react
+    container_name: autoshield-dashboard
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    networks:
+      - autoshield
+    logging: *default-logging
+
+  db:
+    image: postgres:13
+    container_name: autoshield-db
+    environment:
+      - POSTGRES_DB=autoshield
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - autoshield
+
+  backend:
+    image: nginx:alpine
+    container_name: protected-backend
+    
+    # 🔴 CRITICAL: NO ports exposed to host. Attackers MUST go through the main proxy.
+    volumes:
+      - ./test_website:/usr/share/nginx/html:ro
+    restart: unless-stopped
+    networks:
+      - autoshield
+    logging: *default-logging
+
+volumes:
+  nginx_logs:
+  db_data:
+
+networks:
+  autoshield:
+    driver: bridge

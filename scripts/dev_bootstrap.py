@@ -1,0 +1,21 @@
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import db
+import auth
+
+
+def main():
+    db_path = os.environ.get("AUTOSHIELD_DB", "autoshield.db")
+    db.init_db()
+    auth.bootstrap_users()
+    print(f"AutoShield bootstrap complete (DB: {db_path})")
+
+
+if __name__ == "__main__":
+    main()

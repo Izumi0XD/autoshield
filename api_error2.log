@@ -1,0 +1,11 @@
+FastAPI/uvicorn not installed. API layer disabled. pip install fastapi uvicorn
+2026-04-19 05:19:17,236 [WARNING] bcrypt not installed — using SHA-256 fallback. pip install bcrypt
+2026-04-19 05:19:17,236 [WARNING] PyYAML not installed — YAML rule files disabled. pip install pyyaml
+2026-04-19 05:19:17,238 [INFO] Rule engine loaded 25 rules (v1)
+2026-04-19 05:19:17,240 [WARNING] Not running as root — iptables disabled. Using in-memory blocklist.
+Traceback (most recent call last):
+  File "/home/izumi/Desktop/Testings/Cyber_Project/api_layer.py", line 605, in <module>
+    app = create_app()
+  File "/home/izumi/Desktop/Testings/Cyber_Project/api_layer.py", line 75, in create_app
+    raise RuntimeError("FastAPI not installed")
+RuntimeError: FastAPI not installed

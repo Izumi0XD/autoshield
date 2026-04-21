@@ -1,0 +1,9 @@
+.ti-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; }
+.ti-type-btns { display: flex; gap: 8px; margin-bottom: 16px; }
+.ti-type-btn { padding: 6px 14px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--bg-deep); font-size: 12px; font-weight: 500; color: var(--muted); cursor: pointer; transition: all .2s; font-family: var(--mono); }
+.ti-type-btn:hover { border-color: var(--line2); color: var(--text2); }
+.ti-type-btn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,200,255,.04); }
+.adv-card { background: rgba(8,11,16,.5); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
+.adv-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.adv-stat { background: rgba(8,11,16,.5); border: 1px solid var(--line); border-radius: 8px; padding: 10px; text-align: center; }
+@media (max-width: 768px) { .ti-grid { grid-template-columns: 1fr; } }
