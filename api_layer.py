@@ -11,6 +11,7 @@ import logging
 import secrets
 import threading
 import queue
+import urllib.parse
 from datetime import datetime, timedelta
 from typing import Optional, List
 from pathlib import Path
@@ -576,22 +577,9 @@ def create_app() -> "FastAPI":
 
         # Read the body for detection (we'll need to read it again later)
         body = await request.body()
-
-        # 🔥 Run detection before forwarding
-        detection_payload = {
-            "method": request.method,
-            "path": path,
-            "query": str(request.url.query),
-            "body": body.decode("utf-8", errors="ignore") if body else "",
-            "headers": dict(request.headers),
-        }
+        body_str = body.decode(errors="ignore") if body else ""
 
         # Build comprehensive detection payload
-        payload_str = f"{request.method} /{path}"
-        if request.url.query:
-            payload_str += f"?{request.url.query}"
-
-        # Include headers in detection (important for attack patterns)
         headers_str = " ".join(
             [
                 f"{k}:{v}"
@@ -599,6 +587,47 @@ def create_app() -> "FastAPI":
                 if k.lower() not in ["host", "content-length", "x-autoshield-key"]
             ]
         )
+        query_str = str(request.query_params)
+
+        # Normalize input - decode URL encoded attacks
+        decoded_query = urllib.parse.unquote(query_str)
+
+        # Complete payload: method + path + headers + query + body
+        payload = f"{request.method} /{path} HEADERS:{headers_str} QUERY:{decoded_query} BODY:{body_str}"
+
+        # CRITICAL DEBUG: Add visibility
+        print(f"WAF PAYLOAD: {payload[:300]}...")
+        result = _detector.classify(payload)
+        print(f"WAF RESULT: {result}")
+
+        # FORCE BLOCK: Block immediately on ANY detection
+        if result:
+            # Log the event BEFORE returning
+            outcome = _process_event(
+                {
+                    "src_ip": client_ip,
+                    "payload": payload,
+                    "ingestion_source": "proxy",
+                },
+                site,
+            )
+
+            _proxy_blocked_ips.add(client_ip)
+
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "blocked": True,
+                    "attack_type": result.get("attack_type", "UNKNOWN"),
+                    "severity": result.get("severity", "UNKNOWN"),
+                    "detail": f"WAF BLOCKED: {result.get('attack_type', 'UNKNOWN')} detected",
+                    "blocked_ip": client_ip,
+                    "event_id": outcome.get("event_id"),
+                },
+            )
+
+        # DEBUG: Log allowed requests
+        print("WAF: request allowed - no threats detected")
         payload_str += f" HEADERS:{headers_str}"
 
         # Include body content
