@@ -314,7 +314,11 @@ def create_app() -> "FastAPI":
                 return JSONResponse(
                     status_code=403,
                     content={
-                        "detail": f"Threat detected: {result['attack_type']} ({result.get('severity', 'HIGH')}). Access blocked.",
+                        "blocked": True,
+                        "attack_type": result.get("attack_type", "UNKNOWN"),
+                        "severity": result.get("severity", "HIGH"),
+                        "detail": f"Threat detected: {result.get('attack_type', 'UNKNOWN')} ({result.get('severity', 'HIGH')}). Access blocked.",
+                        "blocked_ip": client_ip,
                         "event_id": outcome.get("event_id"),
                     },
                 )
