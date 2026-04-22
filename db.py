@@ -26,6 +26,7 @@ if _USE_PG:
     import psycopg2
     import psycopg2.extras
     import psycopg2.pool
+
     log.info("Using PostgreSQL backend: %s", _DB_URL.split("@")[-1])
     _pg_pool = None
     _pg_pool_lock = threading.Lock()
@@ -41,6 +42,7 @@ if _USE_PG:
         return _pg_pool
 else:
     import sqlite3
+
     log.info("Using SQLite backend: %s", DB_PATH)
 
 
@@ -59,7 +61,9 @@ def _pg_adapt(sql: str) -> str:
     if (is_ignore or is_replace) and "ON CONFLICT" not in sql.upper():
         sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
     # Auto-increment
-    sql = re.sub(r"\bINTEGER PRIMARY KEY AUTOINCREMENT\b", "SERIAL PRIMARY KEY", sql, flags=re.I)
+    sql = re.sub(
+        r"\bINTEGER PRIMARY KEY AUTOINCREMENT\b", "SERIAL PRIMARY KEY", sql, flags=re.I
+    )
     # Boolean
     sql = re.sub(r"\bINTEGER DEFAULT 1\b", "BOOLEAN DEFAULT true", sql, flags=re.I)
     sql = re.sub(r"\bINTEGER DEFAULT 0\b", "BOOLEAN DEFAULT false", sql, flags=re.I)
@@ -573,30 +577,184 @@ def _migrate_user_sites():
 
 def _seed_default_rules():
     DEFAULT_RULES = [
-        ("r_sqli_union", "SQLi - UNION SELECT", "SQLi", r"(?i)(union\s+select)", "CRITICAL", 100),
-        ("r_sqli_sleep", "SQLi - Blind Time", "SQLi", r"(?i)(sleep\s*\(\s*\d+\s*\))", "CRITICAL", 90),
-        ("r_sqli_or", "SQLi - Auth Bypass", "SQLi", r"(?i)(\bor\b\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+)", "CRITICAL", 90),
-        ("r_sqli_drop", "SQLi - DDL Attack", "SQLi", r"(?i)(drop\s+table)", "CRITICAL", 95),
-        ("r_sqli_info", "SQLi - Schema Enum", "SQLi", r"(?i)(information_schema)", "HIGH", 80),
-        ("r_sqli_load", "SQLi - File Read", "SQLi", r"(?i)(load_file\s*\()", "CRITICAL", 95),
-        ("r_sqli_outfile", "SQLi - File Write", "SQLi", r"(?i)(into\s+outfile)", "CRITICAL", 95),
-        ("r_sqli_xpcmd", "SQLi - MSSQL RCE", "SQLi", r"(?i)(xp_cmdshell)", "CRITICAL", 100),
+        (
+            "r_sqli_union",
+            "SQLi - UNION SELECT",
+            "SQLi",
+            r"(?i)(union\s+select)",
+            "CRITICAL",
+            100,
+        ),
+        (
+            "r_sqli_sleep",
+            "SQLi - Blind Time",
+            "SQLi",
+            r"(?i)(sleep\s*\(\s*\d+\s*\))",
+            "CRITICAL",
+            90,
+        ),
+        (
+            "r_sqli_or",
+            "SQLi - Auth Bypass",
+            "SQLi",
+            r"(?i)(\bor\b\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+)",
+            "CRITICAL",
+            90,
+        ),
+        (
+            "r_sqli_drop",
+            "SQLi - DDL Attack",
+            "SQLi",
+            r"(?i)(drop\s+table)",
+            "CRITICAL",
+            95,
+        ),
+        (
+            "r_sqli_info",
+            "SQLi - Schema Enum",
+            "SQLi",
+            r"(?i)(information_schema)",
+            "HIGH",
+            80,
+        ),
+        (
+            "r_sqli_load",
+            "SQLi - File Read",
+            "SQLi",
+            r"(?i)(load_file\s*\()",
+            "CRITICAL",
+            95,
+        ),
+        (
+            "r_sqli_outfile",
+            "SQLi - File Write",
+            "SQLi",
+            r"(?i)(into\s+outfile)",
+            "CRITICAL",
+            95,
+        ),
+        (
+            "r_sqli_xpcmd",
+            "SQLi - MSSQL RCE",
+            "SQLi",
+            r"(?i)(xp_cmdshell)",
+            "CRITICAL",
+            100,
+        ),
         ("r_xss_script", "XSS - Script Tag", "XSS", r"(?i)<script[^>]*>", "HIGH", 90),
-        ("r_xss_on", "XSS - Event Handler", "XSS", r"(?i)(on\w+\s*=\s*['\"])", "HIGH", 85),
-        ("r_xss_alert", "XSS - Classic Probe", "XSS", r"(?i)(alert\s*\()", "MEDIUM", 70),
-        ("r_xss_cookie", "XSS - Cookie Theft", "XSS", r"(?i)(document\.cookie)", "HIGH", 90),
-        ("r_xss_iframe", "XSS - iFrame Inject", "XSS", r"(?i)(<iframe[^>]*>)", "HIGH", 85),
-        ("r_lfi_traverse", "LFI - Path Traversal", "LFI", r"(\.\.\/){2,}", "CRITICAL", 95),
-        ("r_lfi_passwd", "LFI - /etc/passwd", "LFI", r"(?i)(\/etc\/passwd)", "CRITICAL", 100),
-        ("r_lfi_shadow", "LFI - /etc/shadow", "LFI", r"(?i)(\/etc\/shadow)", "CRITICAL", 100),
-        ("r_lfi_php", "LFI - PHP Wrapper", "LFI", r"(?i)(php:\/\/filter)", "CRITICAL", 95),
+        (
+            "r_xss_on",
+            "XSS - Event Handler",
+            "XSS",
+            r"(?i)(on\w+\s*=\s*['\"])",
+            "HIGH",
+            85,
+        ),
+        (
+            "r_xss_alert",
+            "XSS - Classic Probe",
+            "XSS",
+            r"(?i)(alert\s*\()",
+            "MEDIUM",
+            70,
+        ),
+        (
+            "r_xss_cookie",
+            "XSS - Cookie Theft",
+            "XSS",
+            r"(?i)(document\.cookie)",
+            "HIGH",
+            90,
+        ),
+        (
+            "r_xss_iframe",
+            "XSS - iFrame Inject",
+            "XSS",
+            r"(?i)(<iframe[^>]*>)",
+            "HIGH",
+            85,
+        ),
+        (
+            "r_lfi_traverse",
+            "LFI - Path Traversal",
+            "LFI",
+            r"(\.\.\/){2,}",
+            "CRITICAL",
+            95,
+        ),
+        (
+            "r_lfi_passwd",
+            "LFI - /etc/passwd",
+            "LFI",
+            r"(?i)(\/etc\/passwd)",
+            "CRITICAL",
+            100,
+        ),
+        (
+            "r_lfi_shadow",
+            "LFI - /etc/shadow",
+            "LFI",
+            r"(?i)(\/etc\/shadow)",
+            "CRITICAL",
+            100,
+        ),
+        (
+            "r_lfi_php",
+            "LFI - PHP Wrapper",
+            "LFI",
+            r"(?i)(php:\/\/filter)",
+            "CRITICAL",
+            95,
+        ),
         ("r_lfi_proc", "LFI - /proc Self", "LFI", r"(?i)(\/proc\/self)", "HIGH", 85),
-        ("r_cmdi_pipe", "CMDi - Pipe Exec", "CMDi", r"(?i)(\|[\s]*(ls|cat|id|whoami|pwd|uname))", "CRITICAL", 95),
-        ("r_cmdi_backtick", "CMDi - Backtick Exec", "CMDi", r"(?i)(`[\s]*(id|whoami|ls)[\s]*`)", "CRITICAL", 100),
-        ("r_cmdi_dollar", "CMDi - Subshell", "CMDi", r"(?i)(\$\([\s]*(id|whoami|ls)[\s]*\))", "CRITICAL", 100),
-        ("r_cmdi_nc", "CMDi - Netcat Bind", "CMDi", r"(?i)(nc\s+-[lne]+\s+\d+)", "CRITICAL", 100),
-        ("r_cmdi_wget", "CMDi - Remote Fetch", "CMDi", r"(?i)(wget\s+http)", "HIGH", 85),
-        ("r_cmdi_curl", "CMDi - Remote Fetch", "CMDi", r"(?i)(curl\s+http)", "HIGH", 85),
+        (
+            "r_cmdi_pipe",
+            "CMDi - Pipe Exec",
+            "CMDi",
+            r"(?i)(\|[\s]*(ls|cat|id|whoami|pwd|uname))",
+            "CRITICAL",
+            95,
+        ),
+        (
+            "r_cmdi_backtick",
+            "CMDi - Backtick Exec",
+            "CMDi",
+            r"(?i)(`[\s]*(id|whoami|ls)[\s]*`)",
+            "CRITICAL",
+            100,
+        ),
+        (
+            "r_cmdi_dollar",
+            "CMDi - Subshell",
+            "CMDi",
+            r"(?i)(\$\([\s]*(id|whoami|ls)[\s]*\))",
+            "CRITICAL",
+            100,
+        ),
+        (
+            "r_cmdi_nc",
+            "CMDi - Netcat Bind",
+            "CMDi",
+            r"(?i)(nc\s+-[lne]+\s+\d+)",
+            "CRITICAL",
+            100,
+        ),
+        (
+            "r_cmdi_wget",
+            "CMDi - Remote Fetch",
+            "CMDi",
+            r"(?i)(wget\s+http)",
+            "HIGH",
+            85,
+        ),
+        (
+            "r_cmdi_curl",
+            "CMDi - Remote Fetch",
+            "CMDi",
+            r"(?i)(curl\s+http)",
+            "HIGH",
+            85,
+        ),
     ]
     now = datetime.now().isoformat()
     with db() as conn:
@@ -767,8 +925,16 @@ def block_ip(
                 (ip, site_id, attack_type, severity, reason, method, blocked_at, expires_at, unblocked)
             VALUES (?,?,?,?,?,?,?,?,0)
             """,
-            (ip, site_id, attack_type, severity, reason, method,
-             now.isoformat(), expires.isoformat()),
+            (
+                ip,
+                site_id,
+                attack_type,
+                severity,
+                reason,
+                method,
+                now.isoformat(),
+                expires.isoformat(),
+            ),
         )
 
 
@@ -846,7 +1012,7 @@ def get_threat_score(site_id: str) -> int:
             events = conn.execute(
                 "SELECT severity, timestamp, action, status FROM events WHERE site_id=? AND timestamp >= ? AND attack_type != 'Benign'",
                 (site_id, since),
-                ).fetchall()
+            ).fetchall()
 
     if not events:
         return 0
@@ -856,13 +1022,15 @@ def get_threat_score(site_id: str) -> int:
     now = datetime.now()
 
     for ev in events:
-        ev = dict(ev) # 🔥 THIS LINE FIXES EVERYTHING
+        ev = dict(ev)  # 🔥 THIS LINE FIXES EVERYTHING
 
         sev = str(ev.get("severity") or "LOW").upper()
         status = str(ev.get("status") or "").upper()
         action = str(ev.get("action") or "").upper()
         try:
-            age_seconds = (now - datetime.fromisoformat(ev["timestamp"])).total_seconds()
+            age_seconds = (
+                now - datetime.fromisoformat(ev["timestamp"])
+            ).total_seconds()
         except Exception:
             age_seconds = 0
         base = sev_weights.get(sev, 1.0)
@@ -911,7 +1079,9 @@ def toggle_rule(rule_id: str, enabled: bool):
         )
 
 
-def add_custom_rule(name, attack_type, pattern, severity="HIGH", created_by="admin") -> str:
+def add_custom_rule(
+    name, attack_type, pattern, severity="HIGH", created_by="admin"
+) -> str:
     rule_id = f"r_custom_{secrets.token_hex(4)}"
     now = datetime.now().isoformat()
     with db() as conn:
@@ -939,7 +1109,15 @@ def add_webhook(site_id, name, url, secret=None, events=None) -> str:
     with db() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO webhooks (id, site_id, name, url, secret, events, created_at) VALUES (?,?,?,?,?,?,?)",
-            (wid, site_id, name, url, secret, json.dumps(events or ["CRITICAL", "HIGH"]), now),
+            (
+                wid,
+                site_id,
+                name,
+                url,
+                secret,
+                json.dumps(events or ["CRITICAL", "HIGH"]),
+                now,
+            ),
         )
     return wid
 
@@ -949,11 +1127,13 @@ def record_webhook_fire(webhook_id: str, success: bool):
     with db() as conn:
         if success:
             conn.execute(
-                "UPDATE webhooks SET last_fired=?, failure_count=0 WHERE id=?", (now, webhook_id)
+                "UPDATE webhooks SET last_fired=?, failure_count=0 WHERE id=?",
+                (now, webhook_id),
             )
         else:
             conn.execute(
-                "UPDATE webhooks SET failure_count=failure_count+1 WHERE id=?", (webhook_id,)
+                "UPDATE webhooks SET failure_count=failure_count+1 WHERE id=?",
+                (webhook_id,),
             )
 
 
@@ -980,7 +1160,9 @@ def list_sites() -> list:
 
 def update_site_config(site_id: str, config: dict) -> bool:
     with db() as conn:
-        current = conn.execute("SELECT config FROM sites WHERE id=?", (site_id,)).fetchone()
+        current = conn.execute(
+            "SELECT config FROM sites WHERE id=?", (site_id,)
+        ).fetchone()
         if not current:
             return False
         try:
@@ -988,7 +1170,9 @@ def update_site_config(site_id: str, config: dict) -> bool:
         except Exception:
             existing = {}
         existing.update(config)
-        conn.execute("UPDATE sites SET config=? WHERE id=?", (json.dumps(existing), site_id))
+        conn.execute(
+            "UPDATE sites SET config=? WHERE id=?", (json.dumps(existing), site_id)
+        )
     return True
 
 
@@ -1000,7 +1184,9 @@ def update_site_name(site_id: str, name: str) -> bool:
 
 def update_site_upstream(site_id: str, upstream_url: str) -> bool:
     with db() as conn:
-        res = conn.execute("UPDATE sites SET upstream_url=? WHERE id=?", (upstream_url, site_id))
+        res = conn.execute(
+            "UPDATE sites SET upstream_url=? WHERE id=?", (upstream_url, site_id)
+        )
         return res.rowcount > 0
 
 
@@ -1015,18 +1201,30 @@ def create_site(name, domain, plan="free", user_id=None, upstream_url=None) -> d
             (site_id, name, domain, api_key, plan, now, upstream),
         )
     if user_id:
-        log_activity(user_id, "ADD_WEBSITE", f"Added website '{name}' ({domain})",
-                        {"site_id": site_id, "domain": domain})
-    return {"site_id": site_id, "api_key": api_key, "id": site_id, "upstream_url": upstream}
+        log_activity(
+            user_id,
+            "ADD_WEBSITE",
+            f"Added website '{name}' ({domain})",
+            {"site_id": site_id, "domain": domain},
+        )
+    return {
+        "site_id": site_id,
+        "api_key": api_key,
+        "id": site_id,
+        "upstream_url": upstream,
+    }
 
 
 def delete_site(site_id: str, user_id: str) -> bool:
     if remove_user_site(user_id, site_id):
         site = get_site(site_id)
         if site:
-            log_activity(user_id, "DELETE_WEBSITE",
-                            f"Removed website '{site['name']}' ({site['domain']})",
-                            {"site_id": site_id})
+            log_activity(
+                user_id,
+                "DELETE_WEBSITE",
+                f"Removed website '{site['name']}' ({site['domain']})",
+                {"site_id": site_id},
+            )
         return True
     return False
 
@@ -1059,7 +1257,8 @@ def get_user_by_id(user_id: str) -> Optional[dict]:
 def update_user_password(username: str, password_hash: str):
     with db() as conn:
         conn.execute(
-            "UPDATE users SET password_hash=? WHERE username=?", (password_hash, username)
+            "UPDATE users SET password_hash=? WHERE username=?",
+            (password_hash, username),
         )
 
 
@@ -1109,7 +1308,9 @@ def audit(user, action, target=None, detail=None, ip=None, result="OK"):
 
 def get_site_audit(site_id: str) -> Optional[dict]:
     with db() as conn:
-        row = conn.execute("SELECT * FROM site_audits WHERE site_id=?", (site_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM site_audits WHERE site_id=?", (site_id,)
+        ).fetchone()
     return _row_to_dict(row) if row else None
 
 
@@ -1119,11 +1320,14 @@ def get_site_audit(site_id: str) -> Optional[dict]:
 def get_cached_cve(key: str) -> Optional[list]:
     with db() as conn:
         row = conn.execute(
-            "SELECT data, cached_at, ttl_seconds FROM cve_cache WHERE cache_key=?", (key,)
+            "SELECT data, cached_at, ttl_seconds FROM cve_cache WHERE cache_key=?",
+            (key,),
         ).fetchone()
     if not row:
         return None
-    if (datetime.now() - datetime.fromisoformat(row["cached_at"])).total_seconds() > row["ttl_seconds"]:
+    if (
+        datetime.now() - datetime.fromisoformat(row["cached_at"])
+    ).total_seconds() > row["ttl_seconds"]:
         return None
     return json.loads(row["data"])
 
@@ -1144,7 +1348,8 @@ def get_stats(site_id: str = "site_demo", hours: int = 24) -> dict:
     since_visitor = (datetime.now() - timedelta(hours=1)).isoformat()
     with db() as conn:
         total = conn.execute(
-            "SELECT COUNT(*) FROM events WHERE site_id=? AND timestamp>=?", (site_id, since)
+            "SELECT COUNT(*) FROM events WHERE site_id=? AND timestamp>=?",
+            (site_id, since),
         ).fetchone()
         total = list(total.values())[0] if total else 0
 
@@ -1183,7 +1388,8 @@ def get_global_stats() -> dict:
         total = list(total_row.values())[0] if total_row else 0
 
         blocked_row = conn.execute(
-            "SELECT COUNT(*) FROM events WHERE timestamp>=? AND action='BLOCKED'", (since,)
+            "SELECT COUNT(*) FROM events WHERE timestamp>=? AND action='BLOCKED'",
+            (since,),
         ).fetchone()
         blocked = list(blocked_row.values())[0] if blocked_row else 0
 
@@ -1211,7 +1417,9 @@ def get_timeline(site_id: str = "site_demo", limit: int = 200) -> list:
 # ─── Rate Limiting ────────────────────────────────────────────────────────────
 
 
-def record_and_check_rate(ip: str, window_seconds: int = 60, threshold: int = 5) -> tuple:
+def record_and_check_rate(
+    ip: str, window_seconds: int = 60, threshold: int = 5
+) -> tuple:
     now = datetime.now()
     window_start = now.replace(
         second=(now.second // max(1, window_seconds)) * window_seconds, microsecond=0
@@ -1226,7 +1434,8 @@ def record_and_check_rate(ip: str, window_seconds: int = 60, threshold: int = 5)
             (ip, window_start),
         )
         count_row = conn.execute(
-            "SELECT count FROM rate_state WHERE ip=? AND window_start=?", (ip, window_start)
+            "SELECT count FROM rate_state WHERE ip=? AND window_start=?",
+            (ip, window_start),
         ).fetchone()
     count = count_row["count"] if count_row else 1
     return count, count >= threshold
@@ -1239,7 +1448,14 @@ def insert_telemetry(site_id, cpu, mem, disk, details=None):
     with db() as conn:
         conn.execute(
             "INSERT OR IGNORE INTO site_telemetry (site_id, timestamp, cpu_percent, mem_percent, disk_percent, details) VALUES (?,?,?,?,?,?)",
-            (site_id, datetime.now().isoformat(), cpu, mem, disk, json.dumps(details or {})),
+            (
+                site_id,
+                datetime.now().isoformat(),
+                cpu,
+                mem,
+                disk,
+                json.dumps(details or {}),
+            ),
         )
 
 
@@ -1260,58 +1476,16 @@ def upsert_site_audit(site_id, score, ssl_status, ssl_expiry, headers, audit_log
                 (site_id, timestamp, security_score, ssl_status, ssl_expiry, headers, audit_log)
             VALUES (?,?,?,?,?,?,?)
             """,
-            (site_id, datetime.now().isoformat(), score, ssl_status, ssl_expiry,
-                json.dumps(headers), json.dumps(audit_log_data)),
+            (
+                site_id,
+                datetime.now().isoformat(),
+                score,
+                ssl_status,
+                ssl_expiry,
+                json.dumps(headers),
+                json.dumps(audit_log_data),
+            ),
         )
-
-
-def get_threat_score(site_id: str) -> int:
-    window_minutes = 45
-    since = (datetime.now() - timedelta(minutes=window_minutes)).isoformat()
-    with db() as conn:
-        if site_id in ("all", "global"):
-            events = conn.execute(
-                "SELECT severity, timestamp, action, status FROM events WHERE timestamp >= ? AND attack_type != 'Benign'",
-                (since,),
-            ).fetchall()
-        else:
-            events = conn.execute(
-                "SELECT severity, timestamp, action, status FROM events WHERE site_id=? AND timestamp >= ? AND attack_type != 'Benign'",
-                (site_id, since),
-            ).fetchall()
-
-    if not events:
-        return 0
-
-    total_weight = 0.0
-    sev_weights = {"CRITICAL": 26.0, "HIGH": 14.0, "MEDIUM": 6.0, "LOW": 2.0}
-    now = datetime.now()
-
-    for ev in events:
-        sev = str(ev.get("severity") or "LOW").upper()
-        status = str(ev.get("status") or "").upper()
-        action = str(ev.get("action") or "").upper()
-        try:
-            age_seconds = (now - datetime.fromisoformat(ev["timestamp"])).total_seconds()
-        except Exception:
-            age_seconds = 0
-        base = sev_weights.get(sev, 1.0)
-        unresolved = status in {"DETECTED", "MITIGATING"} and action != "BLOCKED"
-        fixed = action == "BLOCKED" or status in {"FIXED", "MITIGATED"}
-        if unresolved:
-            total_weight += base * 1.7 * max(0.0, 1.0 - (age_seconds / 300.0))
-        elif fixed:
-            total_weight += base * 0.85 * max(0.0, 1.0 - (age_seconds / 900.0))
-        else:
-            total_weight += base * 0.4 * max(0.0, 1.0 - (age_seconds / 300.0))
-
-    last_event_time = max(datetime.fromisoformat(ev["timestamp"]) for ev in events)
-    time_since_last = (now - last_event_time).total_seconds()
-    if time_since_last > 300:
-        decay_factor = max(0.0, 1.0 - (time_since_last - 300) / 1800.0)
-        total_weight *= decay_factor
-
-    return min(100, int(total_weight))
 
 
 def get_geo_for_ip(ip: str) -> dict:
@@ -1319,6 +1493,7 @@ def get_geo_for_ip(ip: str) -> dict:
         return {"country": "LOCAL", "city": "Localhost", "isp": "Local"}
     try:
         import urllib.request
+
         url = f"http://ipapi.co/{ip}/json/"
         with urllib.request.urlopen(url, timeout=2) as resp:
             data = json.loads(resp.read().decode())
@@ -1345,7 +1520,9 @@ def log_activity(user_id, action_type, description, metadata=None):
         )
 
 
-def get_user_activity(user_id, limit=50, offset=0, action_type=None, start_date=None) -> list:
+def get_user_activity(
+    user_id, limit=50, offset=0, action_type=None, start_date=None
+) -> list:
     query = "SELECT * FROM activity_logs WHERE user_id = ?"
     params = [user_id]
     if action_type:
