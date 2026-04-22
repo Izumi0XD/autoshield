@@ -195,7 +195,17 @@ def create_app() -> "FastAPI":
 
     @app.get("/")
     def root():
-        return {"status": "running"}
+        return {"status": "running", "version": "2.0.0-waf-connected"}
+
+    @app.get("/debug/version")
+    def debug_version():
+        return {
+            "version": "2.0.0",
+            "waf_status": "connected",
+            "detection_enabled": True,
+            "blocking_enabled": True,
+            "timestamp": datetime.now().isoformat(),
+        }
 
     app.add_middleware(
         CORSMiddleware,
@@ -578,6 +588,9 @@ def create_app() -> "FastAPI":
             payload_str += f" {body.decode('utf-8', errors='ignore')[:500]}"
 
         result = _detector.classify(payload_str)
+        # TEMP DEBUG: Remove after confirming production works
+        if result:
+            log.warning(f"WAF BLOCK: {result['attack_type']} detected in proxy request")
         if result:
             # Block immediately on detection for proxy requests
             _proxy_blocked_ips.add(client_ip)
