@@ -579,6 +579,8 @@ def create_app() -> "FastAPI":
 
         result = _detector.classify(payload_str)
         if result:
+            # Block immediately on detection for proxy requests
+            _proxy_blocked_ips.add(client_ip)
             outcome = _process_event(
                 {
                     "src_ip": client_ip,
@@ -587,17 +589,16 @@ def create_app() -> "FastAPI":
                 },
                 site,
             )
-            if outcome.get("decision") in {"MITIGATING", "BLOCKED"}:
-                _proxy_blocked_ips.add(client_ip)
-                return JSONResponse(
-                    status_code=403,
-                    content={
-                        "blocked": True,
-                        "attack_type": result["attack_type"],
-                        "detail": f"Threat detected: {result['attack_type']}. Blocked.",
-                        "blocked_ip": client_ip,
-                    },
-                )
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "blocked": True,
+                    "attack_type": result["attack_type"],
+                    "detail": f"Threat detected: {result['attack_type']}. Blocked.",
+                    "blocked_ip": client_ip,
+                    "event_id": outcome.get("event_id"),
+                },
+            )
 
         import httpx
 
