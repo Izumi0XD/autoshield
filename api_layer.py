@@ -180,14 +180,14 @@ def is_country_blocked(site: dict, country: str) -> bool:
     return country.upper() in [c.upper() for c in blocked]
 
 
-# Create FastAPI app at module level with CORS
+# Create FastAPI app at module level
 app = FastAPI(
     title="AutoShield AI",
     description="Real-time web attack detection and response API",
-    version="2.0.0",
+    version="2.0.1",  # Updated version
 )
 
-# CORS middleware applied to global app instance
+# CORS middleware applied to global app
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -201,8 +201,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def create_app() -> "FastAPI":
+    """Initialize services and return the global app instance"""
+    if not FASTAPI_OK:
+        raise RuntimeError("FastAPI not installed")
 
-# Services will be initialized when the app is first used
+    # Initialize services
+    DB.init_db()
+    AUTH.bootstrap_users()
+    global _wh_manager
+    _wh_manager = WebhookManager()
+    _start_critical_enforcer_once()
+    _start_mitigation_workers_once()
+
+    # Return the global app (already configured with CORS and routes)
+    return app
+
+
+# ─── Module level app instance ──────────────────────────────────────────────────
+
+# This ensures Render uses the configured app with CORS
+app = create_app()
 
 
 @app.get("/")
