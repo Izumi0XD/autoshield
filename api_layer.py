@@ -213,7 +213,11 @@ def create_app() -> "FastAPI":
 
     @app.get("/")
     def root():
-        return {"status": "running", "version": "2.0.0-waf-connected"}
+        return {
+            "status": "running",
+            "version": "2.0.0-waf-connected",
+            "cors_enabled": True,
+        }
 
     @app.get("/debug/version")
     def debug_version():
@@ -222,8 +226,20 @@ def create_app() -> "FastAPI":
             "waf_status": "connected",
             "detection_enabled": True,
             "blocking_enabled": True,
+            "cors_enabled": True,
+            "allowed_origins": [
+                "https://autoshield-nu.vercel.app",
+                "http://localhost:5173",
+                "http://localhost:3000",
+                "http://localhost:8080",
+            ],
             "timestamp": datetime.now().isoformat(),
         }
+
+    # CORS preflight handler for debugging
+    @app.options("/{path:path}")
+    async def cors_preflight(path: str):
+        return {"status": "ok", "cors_preflight": True}
 
     app.add_middleware(
         CORSMiddleware,
