@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: autoshield-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python api_layer.py
+    plan: free
+    envVars:
+      - key: AUTOSHIELD_API_PORT
+        value: "10000"
+      - key: AUTOSHIELD_DB
+        value: autoshield.db
+      - key: AUTOSHIELD_PROXY_TARGET
+        value: http://localhost:9090
+      - key: AUTOSHIELD_API_KEY
+        generateValue: true
+      - key: BLOCK_DURATION_HOURS
+        value: "1"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      - key: RATE_LIMIT_THRESHOLD
+        value: "5"
+      - key: WS_ENABLED
+        value: "true"
+      - key: LOG_LEVEL
+        value: INFO
+    healthCheckPath: /health

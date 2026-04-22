@@ -171,7 +171,7 @@ class EventBroadcaster:
 
 broadcaster = EventBroadcaster()
 
-API_PORT = int(os.environ.get("AUTOSHIELD_API_PORT", "8503"))
+API_PORT = int(os.environ.get("PORT") or os.environ.get("AUTOSHIELD_API_PORT") or "8503")
 
 
 def is_country_blocked(site: dict, country: str) -> bool:
