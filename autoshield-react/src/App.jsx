@@ -2792,8 +2792,8 @@ function Layout() {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   // ─── Backend-driven lockdown ───────────────────────────────────────────────
-  // Reads threatState from /stats response (set by _GlobalThreatState on backend)
-  const backendThreatState = stats?.threatState || 'NORMAL'; // 'NORMAL' | 'ELEVATED' | 'CRITICAL'
+  // Reads threatState from backend /stats (via engine.getStats() — stats is not in Layout scope)
+  const backendThreatState = engine.getStats()?.threatState || 'NORMAL'; // 'NORMAL' | 'ELEVATED' | 'CRITICAL'
   const [lockdownState, setLockdownState] = useState('none'); // 'none', 'active', 'fixing', 'fixed'
   const [lockdownPulseId, setLockdownPulseId] = useState(0);
   const [prevBackendState, setPrevBackendState] = useState('NORMAL');
