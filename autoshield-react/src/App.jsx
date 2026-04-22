@@ -320,6 +320,10 @@ const API_URL = (() => {
   console.log('Using fallback API URL:', fallbackUrl);
   return fallbackUrl;
 })();
+
+// CRITICAL DEBUG: Log the final API_URL
+console.log('FINAL API_URL =', API_URL);
+console.log('VITE_API_URL env =', import.meta.env?.VITE_API_URL);
 const DEFAULT_DOMAINS = [];
 
 const engine = (() => {
@@ -940,12 +944,14 @@ const engine = (() => {
       if (res.status === 401) throw new Error('Invalid username or password.');
       throw new Error(errorData?.detail || `Login failed (${res.status})`);
     } catch (err) {
+      console.error('Login error:', err); // TEMP DEBUG
       if (err?.name === 'AbortError') {
         throw new Error(`API request timed out. Verify backend is reachable at ${API_URL}.`);
       }
-      if (String(err?.message || '').includes('Failed to fetch')) {
-        throw new Error('Cannot reach API server. Start backend on port 8503.');
-      }
+      // TEMPORARILY DISABLED: Uncomment after confirming API_URL works
+      // if (String(err?.message || '').includes('Failed to fetch')) {
+      //   throw new Error('Cannot reach API server. Start backend on port 8503.');
+      // }
       throw err;
     }
   };
@@ -971,12 +977,14 @@ const engine = (() => {
       const errorData = await res.json().catch(() => ({}));
       throw new Error(errorData?.detail || `Signup failed (${res.status})`);
     } catch (err) {
+      console.error('Signup error:', err); // TEMP DEBUG
       if (err?.name === 'AbortError') {
         throw new Error(`API request timed out. Verify backend is reachable at ${API_URL}.`);
       }
-      if (String(err?.message || '').includes('Failed to fetch')) {
-        throw new Error('Cannot reach API server. Start backend on port 8503.');
-      }
+      // TEMPORARILY DISABLED: Uncomment after confirming API_URL works
+      // if (String(err?.message || '').includes('Failed to fetch')) {
+      //   throw new Error('Cannot reach API server. Start backend on port 8503.');
+      // }
       throw err;
     }
   };
