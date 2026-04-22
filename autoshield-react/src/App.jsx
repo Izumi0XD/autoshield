@@ -693,7 +693,16 @@ const engine = (() => {
       const healthResp = healthRes.status === 'fulfilled' ? healthRes.value : null;
 
       if (eventsResp && (eventsResp.status === 401 || eventsResp.status === 403)) {
-        connection = { online: false, mode: 'unauthorized', lastError: 'Invalid or expired API key' };
+        // Backend rejected the token — kill session immediately
+        console.warn('[AutoShield] fetchState: token rejected (401/403). Clearing session.');
+        streamSeq += 1; // kill any reconnect timers
+        if (eventSource) { try { eventSource.close(); } catch (_) {} eventSource = null; }
+        if (wsSocket) { try { wsSocket.close(); } catch (_) {} wsSocket = null; }
+        localStorage.removeItem('as_token');
+        localStorage.removeItem('as_user');
+        localStorage.removeItem('as_tier');
+        token = null;
+        connection = { online: false, mode: 'unauthorized', lastError: 'Session expired — please log in again' };
         notify();
         return;
       }
@@ -939,8 +948,9 @@ const engine = (() => {
     } catch (_) {
       connectViaSSE();
     }
-
-    fetchState();
+    // Delay fetchState slightly so fetchAuthContext (running in parallel) can
+    // return a 401 and clear the token before we fire off any data requests.
+    setTimeout(() => { if (token) fetchState(); }, 600);
   };
 
   if (token) {
