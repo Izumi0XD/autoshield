@@ -597,30 +597,27 @@ def create_app() -> "FastAPI":
             # Read the body for detection (we'll need to read it again later)
             body = await request.body()
             body_str = body.decode(errors="ignore") if body else ""
-
-            # Build comprehensive detection payload
-            headers_str = " ".join(
-                [
-                    f"{k}:{v}"
-                    for k, v in request.headers.items()
-                    if k.lower() not in ["host", "content-length", "x-autoshield-key"]
-                ]
-            )
             query_str = str(request.query_params)
 
-            # Normalize input - decode URL encoded attacks
-            decoded_query = urllib.parse.unquote(query_str)
+            # SANITY CHECK: Skip detection for empty/normal requests
+            has_content = bool(query_str.strip()) or bool(body_str.strip())
 
-            # Complete payload: method + path + headers + query + body
-            payload = f"{request.method} /{path} HEADERS:{headers_str} QUERY:{decoded_query} BODY:{body_str}"
+            if not has_content:
+                result = None
+                print("WAF SKIP: Empty request - no detection needed")
+            else:
+                # Build focused payload: method + path + query + body (NO HEADERS)
+                # Headers removed to prevent false positives from User-Agent, Accept, etc.
+                decoded_query = urllib.parse.unquote(query_str)
+                payload = f"{request.method} /{path} {decoded_query} {body_str}"
 
-            # CRITICAL DEBUG: Add visibility
-            print(f"WAF PAYLOAD: {payload[:300]}...")
-            result = _detector.classify(payload)
-            print(f"WAF RESULT: {result}")
+                # DEBUG: Print what we're scanning
+                print(f"WAF PAYLOAD: {payload[:300]}...")
+                result = _detector.classify(payload)
+                print(f"WAF RESULT: {result}")
 
-            # FORCE BLOCK: Block immediately on ANY detection
-            if result:
+            # FILTERED BLOCKING: Only block confirmed attacks, not suspicious noise
+            if result and result.get("attack_type") != "Benign":
                 # Log the event BEFORE returning
                 outcome = _process_event(
                     {
