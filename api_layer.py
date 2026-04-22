@@ -628,44 +628,6 @@ def create_app() -> "FastAPI":
 
         # DEBUG: Log allowed requests
         print("WAF: request allowed - no threats detected")
-        payload_str += f" HEADERS:{headers_str}"
-
-        # Include body content
-        if body:
-            body_content = body.decode("utf-8", errors="ignore")[
-                :1000
-            ]  # Increased limit
-            payload_str += f" BODY:{body_content}"
-
-        result = _detector.classify(payload_str)
-        # TEMP DEBUG: Force block all detected attacks for testing
-        if result:
-            log.warning(
-                f"WAF BLOCK: {result['attack_type']} detected - {payload_str[:200]}..."
-            )
-            # TEMP: Force block for testing - remove condition dependency
-            _proxy_blocked_ips.add(client_ip)
-            # Still call _process_event to log the event
-            outcome = _process_event(
-                {
-                    "src_ip": client_ip,
-                    "payload": payload_str,
-                    "ingestion_source": "proxy",
-                },
-                site,
-            )
-            return JSONResponse(
-                status_code=403,
-                content={
-                    "blocked": True,
-                    "attack_type": result["attack_type"],
-                    "severity": result.get("severity", "UNKNOWN"),
-                    "detail": f"WAF BLOCKED: {result['attack_type']} detected in proxy request",
-                    "blocked_ip": client_ip,
-                    "event_id": outcome.get("event_id"),
-                    "debug_payload": payload_str[:100],  # TEMP debug
-                },
-            )
 
         import httpx
 
