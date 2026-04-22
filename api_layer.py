@@ -653,6 +653,38 @@ def health():
         "proxy_blocked_count": len(_proxy_blocked_ips),
     }
 
+
+@app.get("/stats/platform", tags=["public"])
+def platform_stats():
+    """
+    Public endpoint — no authentication required.
+    Returns aggregated platform-wide statistics across ALL users and sites.
+    Used by the landing page to display live threat metrics.
+    """
+    g = DB.get_global_stats()
+    # Also count unique IPs across all events in last 24h
+    from datetime import timedelta as _td
+    since = (datetime.now() - _td(hours=24)).isoformat()
+    with DB.db() as conn:
+        unique_ips_row = conn.execute(
+            "SELECT COUNT(DISTINCT src_ip) FROM events WHERE timestamp>=?", (since,)
+        ).fetchone()
+        unique_ips = list(dict(unique_ips_row).values())[0] if unique_ips_row else 0
+        users_row = conn.execute("SELECT COUNT(*) FROM users WHERE active=1").fetchone()
+        total_users = list(dict(users_row).values())[0] if users_row else 0
+
+    return {
+        "total_events": g.get("total", 0),
+        "blocked": g.get("blocked", 0),
+        "active_sites": g.get("activeSites", 0),
+        "unique_ips": unique_ips,
+        "total_users": total_users,
+        "block_rate": g.get("block_rate", 0),
+        "threat_score": g.get("threatScore", 0),
+        "by_type": g.get("by_type", {}),
+        "threat_state": _global_threat.to_dict()["state"],
+    }
+
 @app.api_route(
     "/proxy/{path:path}", methods=["GET", "POST", "PUT", "DELETE"], tags=["proxy"]
 )

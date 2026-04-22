@@ -2027,8 +2027,35 @@ function Landing() {
   const { scrollYProgress } = useScroll();
   const y1 = useTransform(scrollYProgress, [0, 1], [0, 280]);
   const opacity = useTransform(scrollYProgress, [0, 0.35], [1, 0]);
-  const landingStats = engine.getStats();
-  const blockedThreats = landingStats.blocked || engine.getLog().filter((ev) => ev.action === 'BLOCKED').length;
+
+  // ── Global platform stats (all accounts, no auth required) ──────────────
+  const [platformStats, setPlatformStats] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(`${API_URL}/stats/platform`);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          setPlatformStats(data);
+        }
+      } catch (_) { /* use local fallback below */ }
+    };
+    load();
+    const interval = setInterval(load, 30000); // refresh every 30s
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  // Fallback to local engine stats when platform endpoint hasn't responded yet
+  const localStats = engine.getStats();
+  const localLog   = engine.getLog();
+  const blockedThreats = platformStats
+    ? platformStats.blocked
+    : (localStats.blocked || localLog.filter((ev) => ev.action === 'BLOCKED').length);
+  const totalEvents   = platformStats ? platformStats.total_events : (localStats.total || localLog.length);
+  const uniqueIPs     = platformStats ? platformStats.unique_ips   : new Set(localLog.map(l => l.src_ip)).size;
+  const activeSites   = platformStats ? platformStats.active_sites : 0;
 
   // Interactive Connect Wizard state
   const [wizStep, setWizStep] = useState(0); // 0=domain, 1=dns, 2=done
@@ -2129,7 +2156,7 @@ function Landing() {
             {[
               { val: '99.99%', label: 'Threat Block Rate', color: '#00ff9c' },
               { val: '<1ms', label: 'Detection Latency', color: '#38bdf8' },
-              { val: engine.getStats().total.toLocaleString(), label: 'Events Analysed', color: '#a78bfa' },
+              { val: totalEvents.toLocaleString(), label: 'Events Analysed', color: '#a78bfa' },
               { val: '24/7', label: 'Autonomous SOC', color: '#f472b6' },
             ].map((s, i) => (
               <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 2.4 + i * 0.12 }} style={{ textAlign: 'center' }}>
@@ -2347,7 +2374,7 @@ function Landing() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 40, textAlign: 'center' }}>
             {[
               { num: blockedThreats.toLocaleString(), label: 'Threats Blocked', color: '#00ff9c' },
-              { num: new Set(engine.getLog().map(l => l.src_ip)).size.toLocaleString(), label: 'Unique IPs Tracked', color: '#38bdf8' },
+              { num: uniqueIPs.toLocaleString(), label: 'Unique IPs Tracked', color: '#38bdf8' },
               { num: '100%', label: 'Local Uptime', color: '#a78bfa' },
               { num: '<1ms', label: 'Engine Latency', color: '#f472b6' },
               { num: engine.getDomains().length.toLocaleString(), label: 'Sites Protected', color: '#fb923c' },
