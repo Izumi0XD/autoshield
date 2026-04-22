@@ -202,75 +202,58 @@ app.add_middleware(
 )
 
 
-def create_app() -> "FastAPI":
-    if not FASTAPI_OK:
-        raise RuntimeError("FastAPI not installed")
+# Services will be initialized when the app is first used
 
-    global _wh_manager
-    DB.init_db()
-    AUTH.bootstrap_users()
-    _wh_manager = WebhookManager()
-    _start_critical_enforcer_once()
-    _start_mitigation_workers_once()
 
-    # Note: FastAPI app and CORS middleware are now created at module level
-    # This function just initializes services, routes are defined below
-    # return app  # Moved to end after routes
+@app.get("/")
+def root():
+    return {
+        "status": "running",
+        "version": "2.0.0-waf-connected",
+        "cors_enabled": True,
+    }
 
-    @app.get("/")
-    def root():
-        return {
-            "status": "running",
-            "version": "2.0.0-waf-connected",
-            "cors_enabled": True,
-        }
 
-    @app.get("/debug/version")
-    def debug_version():
-        return {
-            "version": "2.0.0",
-            "waf_status": "connected",
-            "detection_enabled": True,
-            "blocking_enabled": True,
-            "cors_enabled": True,
-            "allowed_origins": [
-                "https://autoshield-nu.vercel.app",
-                "http://localhost:5173",
-                "http://localhost:3000",
-                "http://localhost:8080",
-            ],
-            "timestamp": datetime.now().isoformat(),
-        }
+@app.get("/debug/version")
+def debug_version():
+    return {
+        "version": "2.0.0",
+        "waf_status": "connected",
+        "detection_enabled": True,
+        "blocking_enabled": True,
+        "cors_enabled": True,
+        "allowed_origins": [
+            "https://autoshield-nu.vercel.app",
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://localhost:8080",
+        ],
+        "timestamp": datetime.now().isoformat(),
+    }
 
-    # CORS preflight handler for debugging
-    @app.options("/{path:path}")
-    async def cors_preflight(path: str):
-        return {"status": "ok", "cors_preflight": True}
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# CORS preflight handler for debugging
+@app.options("/{path:path}")
+async def cors_preflight(path: str):
+    return {"status": "ok", "cors_preflight": True}
 
-    @app.middleware("http")
-    async def ddos_shield_middleware(request: Request, call_next):
-        client_ip = request.client.host if request.client else "0.0.0.0"
-        if client_ip in _proxy_blocked_ips:
-            return JSONResponse(
-                status_code=403,
-                content={"detail": "Access blocked due to detected threat."},
-            )
-        if _ddos_shield.auto_block_if_needed(client_ip):
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "DDoS Shield: Rate limit exceeded. Access denied."},
-            )
-        return await call_next(request)
+@app.middleware("http")
+async def ddos_shield_middleware(request: Request, call_next):
+    client_ip = request.client.host if request.client else "0.0.0.0"
+    if client_ip in _proxy_blocked_ips:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Access blocked due to detected threat."},
+        )
+    if _ddos_shield.auto_block_if_needed(client_ip):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "DDoS Shield: Rate limit exceeded. Access denied."},
+        )
+    return await call_next(request)
 
-    @app.middleware("http")
-    async def threat_detection_middleware(request: Request, call_next):
+@app.middleware("http")
+async def threat_detection_middleware(request: Request, call_next):
         internal_prefixes = (
             "/docs",
             "/openapi.json",
@@ -1878,8 +1861,6 @@ def create_app() -> "FastAPI":
             return profile or {"ip": ip, "threat_score": 0, "threat_label": "CLEAN"}
         return {"threats": _ts_engine.get_top_threats(10)}
 
-    return app
-
 
 # ─── Core event processing pipeline ───────────────────────────────────────────
 
@@ -2175,15 +2156,23 @@ def _process_event(ev_data: dict, site: dict) -> dict:
 
 # ─── Standalone runner ────────────────────────────────────────────────────────
 
-app = create_app()
+# App is already created at module level with CORS middleware
 
 
 def run_api_server():
     if not FASTAPI_OK:
         log.error("FastAPI not installed. Run: pip install fastapi uvicorn")
         return
+
+    # Initialize services for standalone server
     DB.init_db()
-    app = create_app()
+    AUTH.bootstrap_users()
+    global _wh_manager
+    _wh_manager = WebhookManager()
+    _start_critical_enforcer_once()
+    _start_mitigation_workers_once()
+
+    # App is already created at module level with CORS
     log.info(f"AutoShield API starting on port {API_PORT}")
     uvicorn.run(app, host="0.0.0.0", port=API_PORT, log_level="warning")
 
@@ -2203,7 +2192,7 @@ class AutoShieldAPIServer:
             raise RuntimeError("FastAPI/uvicorn not installed")
 
         def _runner():
-            app = create_app()
+            # Use the global app instance (already has CORS)
             config = Config(
                 app=app, host=self.host, port=self.port, log_level="warning"
             )
