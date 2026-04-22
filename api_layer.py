@@ -228,6 +228,15 @@ async def cors_preflight(path: str):
 
 @app.middleware("http")
 async def ddos_shield_middleware(request: Request, call_next):
+    # Never rate-limit or block on internal/management paths — this prevents
+    # Vercel's frontend IP from being falsely blocked when polling.
+    _shield_whitelist = (
+        "/health", "/auth", "/docs", "/openapi.json",
+        "/ws/", "/events/stream", "/debug",
+    )
+    if request.url.path.startswith(_shield_whitelist):
+        return await call_next(request)
+
     client_ip = request.client.host if request.client else "0.0.0.0"
     if client_ip in _proxy_blocked_ips:
         return JSONResponse(
@@ -269,6 +278,11 @@ async def threat_detection_middleware(request: Request, call_next):
         "/profile",
     )
     if request.url.path.startswith(internal_prefixes):
+        return await call_next(request)
+
+    # Skip WebSocket upgrade requests and SSE streams — token in URL looks like SQLi
+    upgrade = request.headers.get("upgrade", "").lower()
+    if upgrade == "websocket" or request.url.path.endswith("/stream"):
         return await call_next(request)
 
     client_ip = request.client.host if request.client else "0.0.0.0"
