@@ -134,6 +134,7 @@ class _RedisSlidingWindowRateLimiter:
 
 _rate_limiter = _RedisSlidingWindowRateLimiter()
 
+
 class EventBroadcaster:
     def __init__(self):
         self.subscribers = {}
@@ -163,6 +164,7 @@ class EventBroadcaster:
             except Exception:
                 pass
 
+
 broadcaster = EventBroadcaster()
 
 API_PORT = int(os.environ.get("AUTOSHIELD_API_PORT", "8503"))
@@ -190,7 +192,7 @@ def create_app() -> "FastAPI":
         description="Real-time web attack detection and response API",
         version="2.0.0",
     )
-    
+
     @app.get("/")
     def root():
         return {"status": "running"}
@@ -535,7 +537,9 @@ def create_app() -> "FastAPI":
             "proxy_blocked_count": len(_proxy_blocked_ips),
         }
 
-    @app.get("/proxy/{path:path}", tags=["proxy"])
+    @app.api_route(
+        "/proxy/{path:path}", methods=["GET", "POST", "PUT", "DELETE"], tags=["proxy"]
+    )
     async def proxy_to_backend(
         path: str, request: Request, site: dict = Depends(require_api_key)
     ):
@@ -554,17 +558,31 @@ def create_app() -> "FastAPI":
         site_obj = DB.get_site(site_id) or {}
         upstream = site_obj.get("upstream_url") or PROXY_TARGET
 
-        # Scan request for attacks before forwarding
-        url = f"/{path}"
-        query = str(request.url.query)
-        full_url = f"{url}?{query}" if query else url
-        payload = f"{request.method} {full_url}"
-        result = _detector.classify(payload)
+        # Read the body for detection (we'll need to read it again later)
+        body = await request.body()
+
+        # 🔥 Run detection before forwarding
+        detection_payload = {
+            "method": request.method,
+            "path": path,
+            "query": str(request.url.query),
+            "body": body.decode("utf-8", errors="ignore") if body else "",
+            "headers": dict(request.headers),
+        }
+
+        # Use the existing detector (classify method)
+        payload_str = f"{request.method} /{path}"
+        if request.url.query:
+            payload_str += f"?{request.url.query}"
+        if body:
+            payload_str += f" {body.decode('utf-8', errors='ignore')[:500]}"
+
+        result = _detector.classify(payload_str)
         if result:
             outcome = _process_event(
                 {
                     "src_ip": client_ip,
-                    "payload": payload,
+                    "payload": payload_str,
                     "ingestion_source": "proxy",
                 },
                 site,
@@ -574,6 +592,8 @@ def create_app() -> "FastAPI":
                 return JSONResponse(
                     status_code=403,
                     content={
+                        "blocked": True,
+                        "attack_type": result["attack_type"],
                         "detail": f"Threat detected: {result['attack_type']}. Blocked.",
                         "blocked_ip": client_ip,
                     },
@@ -585,32 +605,23 @@ def create_app() -> "FastAPI":
         query = str(request.url.query)
         if query:
             target_url += f"?{query}"
+
         headers = {
             k: v
             for k, v in request.headers.items()
             if k.lower() not in {"host", "content-length"}
         }
         headers["X-Forwarded-For"] = client_ip
+
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                if request.method == "GET":
-                    resp = await client.get(target_url, headers=headers)
-                elif request.method == "POST":
-                    body = await request.body()
-                    resp = await client.request(
-                        request.method, target_url, content=body, headers=headers
-                    )
-                elif request.method == "PUT":
-                    body = await request.body()
-                    resp = await client.request(
-                        request.method, target_url, content=body, headers=headers
-                    )
-                elif request.method == "DELETE":
-                    resp = await client.delete(target_url, headers=headers)
-                else:
-                    return JSONResponse(
-                        status_code=405, content={"detail": "Method not allowed"}
-                    )
+                resp = await client.request(
+                    request.method,
+                    target_url,
+                    params=request.query_params if request.url.query else None,
+                    content=body,
+                    headers=headers,
+                )
                 return StreamingResponse(
                     resp.iter_bytes(),
                     status_code=resp.status_code,
@@ -620,12 +631,6 @@ def create_app() -> "FastAPI":
             return JSONResponse(
                 status_code=502, content={"detail": f"Backend error: {str(e)}"}
             )
-
-    @app.post("/proxy/{path:path}", tags=["proxy"])
-    async def proxy_post_to_backend(
-        path: str, request: Request, site: dict = Depends(require_api_key)
-    ):
-        return await proxy_to_backend(path, request)
 
     @app.get("/admin/blocked-ips", tags=["admin"])
     def list_blocked_ips():
@@ -1242,6 +1247,7 @@ def create_app() -> "FastAPI":
             src_ip=src_ip,
             since=since,
         )
+        events = [dict(e) for e in events]
         return {"count": len(events), "events": events}
 
     @app.get("/telemetry/latest", tags=["system"])
@@ -1298,6 +1304,7 @@ def create_app() -> "FastAPI":
             try:
                 while True:
                     ev = await q.get()
+                    ev = dict(ev) if not isinstance(ev, dict) else ev
                     status = ev.get("status", "DETECTED")
                     ev["mitigation_phase"] = (
                         "DETECTED"
@@ -1344,6 +1351,7 @@ def create_app() -> "FastAPI":
 
         events = DB.get_events(site_id=site["id"], limit=150)
         for ev in reversed(events):
+            ev = dict(ev)
             status = ev.get("status", "DETECTED")
             ev["mitigation_phase"] = (
                 "DETECTED"
@@ -1360,6 +1368,7 @@ def create_app() -> "FastAPI":
         try:
             while True:
                 ev = await q.get()
+                ev = dict(ev) if not isinstance(ev, dict) else ev
                 status = ev.get("status", "DETECTED")
                 ev["mitigation_phase"] = (
                     "DETECTED"
@@ -1933,6 +1942,7 @@ def _run_mitigation_pipeline(event_id: int, src_ip: str, detection: dict, site_i
 def _publish_event_update(event_id: int, site_id: str):
     ev = DB.get_event_by_id(event_id)
     if ev:
+        ev = dict(ev)
         broadcaster.publish(site_id, ev)
 
 
