@@ -4,7 +4,7 @@
     "dev:frontend": "npm --prefix autoshield-react run dev:vite",
     "dev:backend": "python scripts/dev_bootstrap.py && python api_layer.py",
     "dev:site": "python test_website/server.py",
-    "dev:agent": "python nginx_agent.py --log test_website/access.log --api http://127.0.0.1:8503 --key as_demo_key_change_in_production",
+    "dev:agent": "python nginx_agent.py --log test_website/access.log --api http://127.0.0.1:8505 --key as_demo_key_change_in_production",
     "test:api-smoke": "python smoke_api_test.py",
     "lint": "npm --prefix autoshield-react run lint"
   },

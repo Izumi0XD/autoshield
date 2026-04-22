@@ -119,6 +119,10 @@ class ActiveDefenseManager:
 
     def _init_ipset(self):
         """Sets up scalable ipset hashes instead of standard iptables."""
+        if os.getuid() != 0:
+            log.warning("Not running as root - Skipping ipset/iptables bypass setup. (Blocking will be in-memory only)")
+            return
+
         try:
             subprocess.run(["sudo", "ipset", "create", "autoshield_blocks", "hash:ip"], capture_output=True)
             # Ensure iptables uses the ipset
@@ -194,9 +198,14 @@ class ActiveDefenseManager:
 
     def _worker_loop(self):
         """Async execution using scalable ipset commands."""
+        is_root = os.getuid() == 0
         while True:
             action, ip = self.action_queue.get()
             try:
+                if not is_root:
+                    log.info(f"Memory block {action} for {ip} (Not root)")
+                    continue
+
                 if action == "BLOCK":
                     res = subprocess.run(["sudo", "ipset", "test", "autoshield_blocks", ip], capture_output=True)
                     if res.returncode != 0: # Not in set

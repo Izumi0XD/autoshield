@@ -32,7 +32,7 @@ def _pick_free_port(start: int = 8503, end: int = 8600) -> int:
     for p in range(start, end + 1):
         if not _is_port_open(p):
             return p
-    raise RuntimeError("No free API port found in range 8502-8600")
+    raise RuntimeError("No free API port found in range 8505-8600")
 
 
 def _repo_python() -> str:
@@ -49,8 +49,8 @@ def main() -> int:
         print("[dev-run] npm not found in PATH", file=sys.stderr)
         return 1
 
-    api_port = _pick_free_port(8502, 8600)
-    test_site_port = int(os.environ.get("AUTOSHIELD_TEST_SITE_PORT", "9090"))
+    api_port = _pick_free_port(8505, 8600)
+    test_site_port = int(os.environ.get("AUTOSHIELD_TEST_SITE_PORT", "9091"))
 
     print(f"[dev-run] Using Python: {python_bin}")
     print(f"[dev-run] API port: {api_port}")

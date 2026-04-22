@@ -193,6 +193,9 @@ app.add_middleware(
     allow_origins=[
         "https://autoshield-nu.vercel.app",  # Production frontend
         "http://localhost:5173",  # Local Vite dev server
+        "http://localhost:5174",  # Local Vite dev server (pivoted)
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
         "http://localhost:3000",  # Alternative local port
         "http://localhost:8080",  # Additional local port
     ],
@@ -201,36 +204,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def create_app() -> "FastAPI":
-    """Initialize services and return the global app instance"""
-    if not FASTAPI_OK:
-        raise RuntimeError("FastAPI not installed")
-
-    # Initialize services
-    DB.init_db()
-    AUTH.bootstrap_users()
-    global _wh_manager
-    _wh_manager = WebhookManager()
-    _start_critical_enforcer_once()
-    _start_mitigation_workers_once()
-
-    # Return the global app (already configured with CORS and routes)
-    return app
-
-
-# ─── Module level app instance ──────────────────────────────────────────────────
-
-# This ensures Render uses the configured app with CORS
-app = create_app()
-
-
-@app.get("/")
-def root():
-    return {
-        "status": "running",
-        "version": "2.0.0-waf-connected",
-        "cors_enabled": True,
-    }
 
 
 @app.get("/debug/version")
@@ -244,6 +217,9 @@ def debug_version():
         "allowed_origins": [
             "https://autoshield-nu.vercel.app",
             "http://localhost:5173",
+            "http://localhost:5174",
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:5174",
             "http://localhost:3000",
             "http://localhost:8080",
         ],
@@ -831,7 +807,7 @@ def _google_oauth_config() -> dict:
     client_secret = os.environ.get("AUTOSHIELD_GOOGLE_CLIENT_SECRET", "").strip()
     redirect_uri = os.environ.get(
         "AUTOSHIELD_GOOGLE_REDIRECT_URI",
-        "http://localhost:8502/auth/google/callback",
+        "http://localhost:8505/auth/google/callback",
     ).strip()
     frontend_url = os.environ.get(
         "AUTOSHIELD_FRONTEND_URL", "http://localhost:5173"
@@ -1885,292 +1861,292 @@ async def legacy_threat_score(ip: Optional[str] = None):
 
 
 def _queue_mitigation(event_id: int, src_ip: str, detection: dict, site_id: str):
-with _mitigation_lock:
-    if event_id in _mitigation_inflight:
-        return
-    _mitigation_inflight.add(event_id)
-
-try:
-    _mitigation_queue.put_nowait((event_id, src_ip, detection, site_id))
-except queue.Full:
-    log.error(
-        "Mitigation queue full, event queued for monitor-only path: %s", event_id
-    )
-    DB.update_event_action(event_id, action="MONITORED", status="DETECTED")
     with _mitigation_lock:
-        _mitigation_inflight.discard(event_id)
+        if event_id in _mitigation_inflight:
+            return
+        _mitigation_inflight.add(event_id)
+
+    try:
+        _mitigation_queue.put_nowait((event_id, src_ip, detection, site_id))
+    except queue.Full:
+        log.error(
+            "Mitigation queue full, event queued for monitor-only path: %s", event_id
+        )
+        DB.update_event_action(event_id, action="MONITORED", status="DETECTED")
+        with _mitigation_lock:
+            _mitigation_inflight.discard(event_id)
 
 
 def _mitigation_worker_loop():
-while True:
-    event_id, src_ip, detection, site_id = _mitigation_queue.get()
-    try:
-        _run_mitigation_pipeline(event_id, src_ip, detection, site_id)
-    except Exception as exc:
-        log.error("Mitigation worker error for event %s: %s", event_id, exc)
-        DB.update_event_action(event_id, action="MONITORED", status="DETECTED")
-    finally:
-        with _mitigation_lock:
-            _mitigation_inflight.discard(event_id)
-        _mitigation_queue.task_done()
+    while True:
+        event_id, src_ip, detection, site_id = _mitigation_queue.get()
+        try:
+            _run_mitigation_pipeline(event_id, src_ip, detection, site_id)
+        except Exception as exc:
+            log.error("Mitigation worker error for event %s: %s", event_id, exc)
+            DB.update_event_action(event_id, action="MONITORED", status="DETECTED")
+        finally:
+            with _mitigation_lock:
+                _mitigation_inflight.discard(event_id)
+            _mitigation_queue.task_done()
 
 
 def _start_mitigation_workers_once():
-global _mitigation_workers_started
-with _mitigation_worker_lock:
-    if _mitigation_workers_started:
-        return
-    workers = _safe_int(os.environ.get("AUTOSHIELD_MITIGATION_WORKERS", "4"), 4)
-    workers = max(2, min(16, workers))
-    for _ in range(workers):
-        threading.Thread(target=_mitigation_worker_loop, daemon=True).start()
-    _mitigation_workers_started = True
-    log.info("Mitigation worker pool started (%s workers)", workers)
+    global _mitigation_workers_started
+    with _mitigation_worker_lock:
+        if _mitigation_workers_started:
+            return
+        workers = _safe_int(os.environ.get("AUTOSHIELD_MITIGATION_WORKERS", "4"), 4)
+        workers = max(2, min(16, workers))
+        for _ in range(workers):
+            threading.Thread(target=_mitigation_worker_loop, daemon=True).start()
+        _mitigation_workers_started = True
+        log.info("Mitigation worker pool started (%s workers)", workers)
 
 
 def _enforce_critical_state(site_id: str):
-site = DB.get_site(site_id) or {}
-plan = str(site.get("plan", "free")).lower()
-if plan not in {"premium", "pro", "enterprise"}:
-    return
+    site = DB.get_site(site_id) or {}
+    plan = str(site.get("plan", "free")).lower()
+    if plan not in {"premium", "pro", "enterprise"}:
+        return
 
-with DB.db() as conn:
-    rows = conn.execute(
-        "SELECT id, src_ip, attack_type, severity FROM events WHERE site_id=? AND severity='CRITICAL' AND status IN ('DETECTED','MITIGATING') AND action != 'BLOCKED' ORDER BY timestamp DESC LIMIT 50",
-        (site_id,),
-    ).fetchall()
+    with DB.db() as conn:
+        rows = conn.execute(
+            "SELECT id, src_ip, attack_type, severity FROM events WHERE site_id=? AND severity='CRITICAL' AND status IN ('DETECTED','MITIGATING') AND action != 'BLOCKED' ORDER BY timestamp DESC LIMIT 50",
+            (site_id,),
+        ).fetchall()
 
-for row in rows:
-    detection = {
-        "attack_type": row["attack_type"],
-        "severity": row["severity"],
-        "matched_rules": [],
-        "cve_hints": [],
-    }
-    _queue_mitigation(int(row["id"]), row["src_ip"], detection, site_id)
+    for row in rows:
+        detection = {
+            "attack_type": row["attack_type"],
+            "severity": row["severity"],
+            "matched_rules": [],
+            "cve_hints": [],
+        }
+        _queue_mitigation(int(row["id"]), row["src_ip"], detection, site_id)
 
 
 def _critical_enforcer_loop():
-while True:
-    try:
-        sites = DB.list_sites()
-        for site in sites:
-            site_id = site.get("id")
-            if not site_id:
-                continue
-            if DB.get_threat_score(site_id) >= 80:
-                _enforce_critical_state(site_id)
-    except Exception as exc:
-        log.error(f"Critical enforcer loop failed: {exc}")
-    time.sleep(1.0)
+    while True:
+        try:
+            sites = DB.list_sites()
+            for site in sites:
+                site_id = site.get("id")
+                if not site_id:
+                    continue
+                if DB.get_threat_score(site_id) >= 80:
+                    _enforce_critical_state(site_id)
+        except Exception as exc:
+            log.error(f"Critical enforcer loop failed: {exc}")
+        time.sleep(1.0)
 
 
 def _start_critical_enforcer_once():
-global _critical_enforcer_started
-with _critical_enforcer_lock:
-    if _critical_enforcer_started:
-        return
-    threading.Thread(target=_critical_enforcer_loop, daemon=True).start()
-    _critical_enforcer_started = True
+    global _critical_enforcer_started
+    with _critical_enforcer_lock:
+        if _critical_enforcer_started:
+            return
+        threading.Thread(target=_critical_enforcer_loop, daemon=True).start()
+        _critical_enforcer_started = True
 
 
 def _run_mitigation_pipeline(event_id: int, src_ip: str, detection: dict, site_id: str):
-try:
-    site = DB.get_site(site_id) or {}
-    if str(site.get("plan", "free")).lower() not in {
-        "premium",
-        "pro",
-        "enterprise",
-    }:
-        DB.update_event_action(event_id, action="MONITORED", status="DETECTED")
+    try:
+        site = DB.get_site(site_id) or {}
+        if str(site.get("plan", "free")).lower() not in {
+            "premium",
+            "pro",
+            "enterprise",
+        }:
+            DB.update_event_action(event_id, action="MONITORED", status="DETECTED")
+            _publish_event_update(event_id, site_id)
+            return
+
+        DB.update_event_action(event_id, action="MITIGATING", status="MITIGATING")
         _publish_event_update(event_id, site_id)
-        return
+        time.sleep(0.25)
 
-    DB.update_event_action(event_id, action="MITIGATING", status="MITIGATING")
-    _publish_event_update(event_id, site_id)
-    time.sleep(0.25)
-
-    block_rec = _blocker.block_ip(
-        src_ip,
-        reason=f"Auto: {detection['attack_type']}",
-        severity=detection["severity"],
-        attack_type=detection["attack_type"],
-    )
-
-    block_status = str(block_rec.get("status", "")).upper()
-
-    if block_status in {"BLOCKED", "ALREADY_BLOCKED"}:
-        DB.block_ip(
+        block_rec = _blocker.block_ip(
             src_ip,
-            detection["attack_type"],
-            detection["severity"],
-            f"Auto-block: {detection['attack_type']}",
-            method=block_rec.get("method", "in-memory"),
-            site_id=site_id,
+            reason=f"Auto: {detection['attack_type']}",
+            severity=detection["severity"],
+            attack_type=detection["attack_type"],
         )
-        DB.update_event_action(event_id, action="BLOCKED", status="FIXED")
-        _publish_event_update(event_id, site_id)
-        DB.audit(
-            "api", "AUTO_MITIGATED", target=src_ip, detail=f"event_id={event_id}"
-        )
-        return
 
-    if block_status == "SKIPPED":
-        DB.update_event_action(event_id, action="MONITORED", status="FIXED")
-        _publish_event_update(event_id, site_id)
-        return
+        block_status = str(block_rec.get("status", "")).upper()
 
-    raise RuntimeError(block_rec.get("error") or f"block status={block_status}")
-except Exception as exc:
-    log.error(f"Mitigation pipeline failed for event {event_id}: {exc}")
-    DB.update_event_action(event_id, action="MONITORED", status="DETECTED")
-    _publish_event_update(event_id, site_id)
-
-
-def _publish_event_update(event_id: int, site_id: str):
-ev = DB.get_event_by_id(event_id)
-if ev:
-    ev = dict(ev)
-    broadcaster.publish(site_id, ev)
-
-
-def _process_event(ev_data: dict, site: dict) -> dict:
-payload = ev_data.get("payload", "")
-src_ip = ev_data.get("src_ip", "0.0.0.0")
-site_id = site.get("id", "site_demo")
-site_cfg = site.get("config", {}) or {}
-plan = str(site.get("plan", "free")).lower()
-mitigation_allowed = plan in {"premium", "pro", "enterprise"}
-
-detection = _detector.classify(payload)
-if not detection:
-    detection = {
-        "attack_type": "Benign",
-        "severity": "INFO",
-        "confidence": 0,
-        "matched_rules": [],
-        "cve_hints": [],
-    }
-
-event = {
-    "timestamp": ev_data.get("timestamp") or datetime.now().isoformat(),
-    "src_ip": src_ip,
-    "dst_ip": ev_data.get("dst_ip"),
-    "dst_port": ev_data.get("dst_port"),
-    "attack_type": detection["attack_type"],
-    "severity": detection["severity"],
-    "confidence": detection["confidence"],
-    "payload_snip": payload[:300],
-    "matched_rules": detection["matched_rules"],
-    "cve_hints": detection["cve_hints"],
-    "action": "PENDING",
-    "status": "DETECTED",
-    "ingestion_source": ev_data.get("ingestion_source", "api"),
-}
-
-should_block = detection["severity"] == "CRITICAL" or (
-    site_cfg.get("block_threshold", "CRITICAL") == "HIGH"
-    and detection["severity"] in ("CRITICAL", "HIGH")
-)
-
-rate_count, rate_exceeded = _rate_limiter.hit(
-    key=f"{site_id}:{src_ip}",
-    window_seconds=int(site_cfg.get("rate_limit_window", 60)),
-    threshold=int(site_cfg.get("rate_limit_max", 5)),
-)
-DB.record_and_check_rate(
-    src_ip,
-    window_seconds=int(site_cfg.get("rate_limit_window", 60)),
-    threshold=int(site_cfg.get("rate_limit_max", 5)),
-)
-if rate_exceeded:
-    should_block = True
-
-if not should_block:
-    geo = DB.get_geo_for_ip(src_ip)
-    country_code = str(geo.get("country", ""))
-    if is_country_blocked(site, country_code):
-        if mitigation_allowed:
-            block_rec = _blocker.block_ip(
-                src_ip,
-                reason=f"Country {country_code} blocked",
-                severity="HIGH",
-                attack_type="GEOBLOCK",
-            )
+        if block_status in {"BLOCKED", "ALREADY_BLOCKED"}:
             DB.block_ip(
                 src_ip,
-                "GEOBLOCK",
-                "HIGH",
-                f"Country {country_code} blocked",
+                detection["attack_type"],
+                detection["severity"],
+                f"Auto-block: {detection['attack_type']}",
                 method=block_rec.get("method", "in-memory"),
                 site_id=site_id,
             )
-            event = {
-                "timestamp": ev_data.get("timestamp") or datetime.now().isoformat(),
-                "src_ip": src_ip,
-                "dst_ip": ev_data.get("dst_ip"),
-                "dst_port": ev_data.get("dst_port"),
-                "attack_type": "GEOBLOCK",
-                "severity": "HIGH",
-                "confidence": 100,
-                "payload_snip": payload[:300],
-                "matched_rules": ["Geo policy"],
-                "cve_hints": [],
-                "action": "BLOCKED",
-                "status": "FIXED",
-                "ingestion_source": ev_data.get("ingestion_source", "api"),
-            }
-            event_id = DB.insert_event(event, site_id=site_id)
+            DB.update_event_action(event_id, action="BLOCKED", status="FIXED")
+            _publish_event_update(event_id, site_id)
             DB.audit(
-                "api",
-                "AUTO_GEO_BLOCK",
-                target=src_ip,
-                detail=f"country={country_code};event_id={event_id}",
+                "api", "AUTO_MITIGATED", target=src_ip, detail=f"event_id={event_id}"
             )
-            return {"status": "blocked", "reason": "geoblock", "event_id": event_id}
+            return
 
-should_mitigate = should_block and mitigation_allowed
-event["action"] = "PENDING" if should_mitigate else "MONITORED"
-event_id = DB.insert_event(event, site_id=site_id)
-event["id"] = event_id
-_publish_event_update(event_id, site_id)
+        if block_status == "SKIPPED":
+            DB.update_event_action(event_id, action="MONITORED", status="FIXED")
+            _publish_event_update(event_id, site_id)
+            return
 
-if should_mitigate:
-    _queue_mitigation(event_id, src_ip, detection, site_id)
+        raise RuntimeError(block_rec.get("error") or f"block status={block_status}")
+    except Exception as exc:
+        log.error(f"Mitigation pipeline failed for event {event_id}: {exc}")
+        DB.update_event_action(event_id, action="MONITORED", status="DETECTED")
+        _publish_event_update(event_id, site_id)
 
-scoring_event = dict(event)
-if should_mitigate:
-    scoring_event["action"] = "BLOCKED"
-    scoring_event["status"] = "FIXED"
-profile = _ts_engine.ingest(scoring_event)
-if profile:
-    DB.upsert_ip_reputation(
-        src_ip,
-        profile.get("threat_score", 0),
-        profile.get("threat_label", "?"),
-        profile.get("attack_types", []),
+
+def _publish_event_update(event_id: int, site_id: str):
+    ev = DB.get_event_by_id(event_id)
+    if ev:
+        ev = dict(ev)
+        broadcaster.publish(site_id, ev)
+
+
+def _process_event(ev_data: dict, site: dict) -> dict:
+    payload = ev_data.get("payload", "")
+    src_ip = ev_data.get("src_ip", "0.0.0.0")
+    site_id = site.get("id", "site_demo")
+    site_cfg = site.get("config", {}) or {}
+    plan = str(site.get("plan", "free")).lower()
+    mitigation_allowed = plan in {"premium", "pro", "enterprise"}
+
+    detection = _detector.classify(payload)
+    if not detection:
+        detection = {
+            "attack_type": "Benign",
+            "severity": "INFO",
+            "confidence": 0,
+            "matched_rules": [],
+            "cve_hints": [],
+        }
+
+    event = {
+        "timestamp": ev_data.get("timestamp") or datetime.now().isoformat(),
+        "src_ip": src_ip,
+        "dst_ip": ev_data.get("dst_ip"),
+        "dst_port": ev_data.get("dst_port"),
+        "attack_type": detection["attack_type"],
+        "severity": detection["severity"],
+        "confidence": detection["confidence"],
+        "payload_snip": payload[:300],
+        "matched_rules": detection["matched_rules"],
+        "cve_hints": detection["cve_hints"],
+        "action": "PENDING",
+        "status": "DETECTED",
+        "ingestion_source": ev_data.get("ingestion_source", "api"),
+    }
+
+    should_block = detection["severity"] == "CRITICAL" or (
+        site_cfg.get("block_threshold", "CRITICAL") == "HIGH"
+        and detection["severity"] in ("CRITICAL", "HIGH")
     )
 
-if _wh_manager:
-    webhooks = DB.get_webhooks(site_id=site_id)
-    for wh in webhooks:
-        if detection["severity"] in wh.get("events", []):
-            _wh_manager.fire_async(wh, event)
+    rate_count, rate_exceeded = _rate_limiter.hit(
+        key=f"{site_id}:{src_ip}",
+        window_seconds=int(site_cfg.get("rate_limit_window", 60)),
+        threshold=int(site_cfg.get("rate_limit_max", 5)),
+    )
+    DB.record_and_check_rate(
+        src_ip,
+        window_seconds=int(site_cfg.get("rate_limit_window", 60)),
+        threshold=int(site_cfg.get("rate_limit_max", 5)),
+    )
+    if rate_exceeded:
+        should_block = True
 
-if mitigation_allowed and DB.get_threat_score(site_id) >= 80:
-    _enforce_critical_state(site_id)
+    if not should_block:
+        geo = DB.get_geo_for_ip(src_ip)
+        country_code = str(geo.get("country", ""))
+        if is_country_blocked(site, country_code):
+            if mitigation_allowed:
+                block_rec = _blocker.block_ip(
+                    src_ip,
+                    reason=f"Country {country_code} blocked",
+                    severity="HIGH",
+                    attack_type="GEOBLOCK",
+                )
+                DB.block_ip(
+                    src_ip,
+                    "GEOBLOCK",
+                    "HIGH",
+                    f"Country {country_code} blocked",
+                    method=block_rec.get("method", "in-memory"),
+                    site_id=site_id,
+                )
+                event = {
+                    "timestamp": ev_data.get("timestamp") or datetime.now().isoformat(),
+                    "src_ip": src_ip,
+                    "dst_ip": ev_data.get("dst_ip"),
+                    "dst_port": ev_data.get("dst_port"),
+                    "attack_type": "GEOBLOCK",
+                    "severity": "HIGH",
+                    "confidence": 100,
+                    "payload_snip": payload[:300],
+                    "matched_rules": ["Geo policy"],
+                    "cve_hints": [],
+                    "action": "BLOCKED",
+                    "status": "FIXED",
+                    "ingestion_source": ev_data.get("ingestion_source", "api"),
+                }
+                event_id = DB.insert_event(event, site_id=site_id)
+                DB.audit(
+                    "api",
+                    "AUTO_GEO_BLOCK",
+                    target=src_ip,
+                    detail=f"country={country_code};event_id={event_id}",
+                )
+                return {"status": "blocked", "reason": "geoblock", "event_id": event_id}
 
-return {
-    "decision": "MITIGATING" if should_mitigate else event["action"],
-    "event_id": event_id,
-    "attack_type": detection["attack_type"],
-    "severity": detection["severity"],
-    "confidence": detection["confidence"],
-    "cve_hints": detection["cve_hints"],
-    "blocked": False if should_mitigate else event["action"] == "BLOCKED",
-    "status": "MITIGATING" if should_mitigate else event["status"],
-    "mitigation_eligible": mitigation_allowed,
-}
+    should_mitigate = should_block and mitigation_allowed
+    event["action"] = "PENDING" if should_mitigate else "MONITORED"
+    event_id = DB.insert_event(event, site_id=site_id)
+    event["id"] = event_id
+    _publish_event_update(event_id, site_id)
+
+    if should_mitigate:
+        _queue_mitigation(event_id, src_ip, detection, site_id)
+
+    scoring_event = dict(event)
+    if should_mitigate:
+        scoring_event["action"] = "BLOCKED"
+        scoring_event["status"] = "FIXED"
+    profile = _ts_engine.ingest(scoring_event)
+    if profile:
+        DB.upsert_ip_reputation(
+            src_ip,
+            profile.get("threat_score", 0),
+            profile.get("threat_label", "?"),
+            profile.get("attack_types", []),
+        )
+
+    if _wh_manager:
+        webhooks = DB.get_webhooks(site_id=site_id)
+        for wh in webhooks:
+            if detection["severity"] in wh.get("events", []):
+                _wh_manager.fire_async(wh, event)
+
+    if mitigation_allowed and DB.get_threat_score(site_id) >= 80:
+        _enforce_critical_state(site_id)
+
+    return {
+        "decision": "MITIGATING" if should_mitigate else event["action"],
+        "event_id": event_id,
+        "attack_type": detection["attack_type"],
+        "severity": detection["severity"],
+        "confidence": detection["confidence"],
+        "cve_hints": detection["cve_hints"],
+        "blocked": False if should_mitigate else event["action"] == "BLOCKED",
+        "status": "MITIGATING" if should_mitigate else event["status"],
+        "mitigation_eligible": mitigation_allowed,
+    }
 
 
 # ─── Standalone runner ────────────────────────────────────────────────────────
@@ -2178,22 +2154,54 @@ return {
 # App is already created at module level with CORS middleware
 
 
+def create_app() -> "FastAPI":
+    """Initialize services and return the global app instance"""
+    if not FASTAPI_OK:
+        raise RuntimeError("FastAPI not installed")
+
+    # Initialize services
+    DB.init_db()
+    AUTH.bootstrap_users()
+    global _wh_manager
+    _wh_manager = WebhookManager()
+    _start_critical_enforcer_once()
+    _start_mitigation_workers_once()
+
+    # Return the global app (already configured with CORS and routes)
+    return app
+
+
+# ─── Module level app instance ──────────────────────────────────────────────────
+
+# This ensures Render uses the configured app with CORS
+app = create_app()
+
+
+@app.get("/")
+def root():
+    return {
+        "status": "running",
+        "version": "2.0.0-waf-connected",
+        "cors_enabled": True,
+    }
+
+
 def run_api_server():
-if not FASTAPI_OK:
-    log.error("FastAPI not installed. Run: pip install fastapi uvicorn")
-    return
+    if not FASTAPI_OK:
+        log.error("FastAPI not installed. Run: pip install fastapi uvicorn")
+        return
 
-# Initialize services for standalone server
-DB.init_db()
-AUTH.bootstrap_users()
-global _wh_manager
-_wh_manager = WebhookManager()
-_start_critical_enforcer_once()
-_start_mitigation_workers_once()
+    # Initialize services for standalone server
+    DB.init_db()
+    AUTH.bootstrap_users()
+    global _wh_manager
+    _wh_manager = WebhookManager()
+    _start_critical_enforcer_once()
+    _start_mitigation_workers_once()
 
-# App is already created at module level with CORS
-log.info(f"AutoShield API starting on port {API_PORT}")
-uvicorn.run(app, host="0.0.0.0", port=API_PORT, log_level="warning")
+    # App is already created at module level with CORS
+    log.info(f"AutoShield API starting on port {API_PORT}")
+    uvicorn.run(app, host="0.0.0.0", port=API_PORT, log_level="warning")
 
 
 class AutoShieldAPIServer:

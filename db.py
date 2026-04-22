@@ -1351,19 +1351,19 @@ def get_stats(site_id: str = "site_demo", hours: int = 24) -> dict:
             "SELECT COUNT(*) FROM events WHERE site_id=? AND timestamp>=?",
             (site_id, since),
         ).fetchone()
-        total = list(total.values())[0] if total else 0
+        total = list(dict(total).values())[0] if total else 0
 
         blocked = conn.execute(
             "SELECT COUNT(*) FROM events WHERE site_id=? AND timestamp>=? AND action='BLOCKED'",
             (site_id, since),
         ).fetchone()
-        blocked = list(blocked.values())[0] if blocked else 0
+        blocked = list(dict(blocked).values())[0] if blocked else 0
 
         unique_visitors = conn.execute(
             "SELECT COUNT(DISTINCT src_ip) FROM events WHERE site_id=? AND timestamp>=?",
             (site_id, since_visitor),
         ).fetchone()
-        unique_visitors = list(unique_visitors.values())[0] if unique_visitors else 0
+        unique_visitors = list(dict(unique_visitors).values())[0] if unique_visitors else 0
 
         by_type = conn.execute(
             "SELECT attack_type, COUNT(*) as cnt FROM events WHERE site_id=? AND timestamp>=? GROUP BY attack_type ORDER BY cnt DESC",
@@ -1385,16 +1385,16 @@ def get_global_stats() -> dict:
         total_row = conn.execute(
             "SELECT COUNT(*) FROM events WHERE timestamp>=?", (since,)
         ).fetchone()
-        total = list(total_row.values())[0] if total_row else 0
+        total = list(dict(total_row).values())[0] if total_row else 0
 
         blocked_row = conn.execute(
             "SELECT COUNT(*) FROM events WHERE timestamp>=? AND action='BLOCKED'",
             (since,),
         ).fetchone()
-        blocked = list(blocked_row.values())[0] if blocked_row else 0
+        blocked = list(dict(blocked_row).values())[0] if blocked_row else 0
 
         sites_row = conn.execute("SELECT COUNT(*) FROM sites").fetchone()
-        sites = list(sites_row.values())[0] if sites_row else 0
+        sites = list(dict(sites_row).values())[0] if sites_row else 0
 
         by_type = conn.execute(
             "SELECT attack_type, COUNT(*) as cnt FROM events WHERE timestamp>=? GROUP BY attack_type ORDER BY cnt DESC",
@@ -1566,7 +1566,7 @@ def purge_old_events(days: int = 90):
         count_row = conn.execute(
             "SELECT COUNT(*) FROM events WHERE timestamp < ?", (cutoff,)
         ).fetchone()
-        n = list(count_row.values())[0] if count_row else 0
+        n = list(dict(count_row).values())[0] if count_row else 0
         conn.execute("DELETE FROM events WHERE timestamp < ?", (cutoff,))
         conn.execute("DELETE FROM rate_state WHERE window_start < ?", (cutoff,))
     log.info("Purged %d events older than %d days", n, days)
