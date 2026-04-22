@@ -180,6 +180,28 @@ def is_country_blocked(site: dict, country: str) -> bool:
     return country.upper() in [c.upper() for c in blocked]
 
 
+# Create FastAPI app at module level with CORS
+app = FastAPI(
+    title="AutoShield AI",
+    description="Real-time web attack detection and response API",
+    version="2.0.0",
+)
+
+# CORS middleware applied to global app instance
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://autoshield-nu.vercel.app",  # Production frontend
+        "http://localhost:5173",  # Local Vite dev server
+        "http://localhost:3000",  # Alternative local port
+        "http://localhost:8080",  # Additional local port
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 def create_app() -> "FastAPI":
     if not FASTAPI_OK:
         raise RuntimeError("FastAPI not installed")
@@ -191,25 +213,9 @@ def create_app() -> "FastAPI":
     _start_critical_enforcer_once()
     _start_mitigation_workers_once()
 
-    app = FastAPI(
-        title="AutoShield AI",
-        description="Real-time web attack detection and response API",
-        version="2.0.0",
-    )
-
-    # CORS middleware for frontend integration
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[
-            "https://autoshield-nu.vercel.app",  # Production frontend
-            "http://localhost:5173",  # Local Vite dev server
-            "http://localhost:3000",  # Alternative local port
-            "http://localhost:8080",  # Additional local port
-        ],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # Note: FastAPI app and CORS middleware are now created at module level
+    # This function just initializes services, routes are defined below
+    # return app  # Moved to end after routes
 
     @app.get("/")
     def root():
