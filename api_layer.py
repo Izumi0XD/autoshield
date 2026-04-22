@@ -248,55 +248,57 @@ def is_country_blocked(site: dict, country: str) -> bool:
 app = FastAPI(
     title="AutoShield AI",
     description="Real-time web attack detection and response API",
-    version="2.0.1",  # Updated version
+    version="2.0.1",
 )
 
-# CORS middleware applied to global app
-# Using wildcard — auth is stateless token-based (X-AutoShield-Key header), not cookie-based,
-# so this is safe for all origins including Vercel preview URLs.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,  # Must be False when allow_origins=["*"]
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ---------------------------------------------------------------------------
+# CORS — raw header injection middleware.
+# This is registered via add_middleware so it runs OUTERMOST (first on request,
+# last on response), guaranteeing Access-Control-* headers are present on
+# EVERY response including preflight OPTIONS — regardless of any other
+# middleware that may short-circuit the chain.
+# ---------------------------------------------------------------------------
+_CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "*",
+    "Access-Control-Max-Age": "86400",
+}
 
+@app.middleware("http")
+async def cors_everywhere(request: Request, call_next):
+    """Inject CORS headers on every response, short-circuit OPTIONS preflights."""
+    if request.method == "OPTIONS":
+        return JSONResponse(
+            status_code=200,
+            content={"ok": True},
+            headers=_CORS_HEADERS,
+        )
+    response = await call_next(request)
+    for k, v in _CORS_HEADERS.items():
+        response.headers[k] = v
+    return response
 
 
 @app.get("/debug/version")
 def debug_version():
     return {
-        "version": "2.0.0",
-        "waf_status": "connected",
-        "detection_enabled": True,
-        "blocking_enabled": True,
-        "cors_enabled": True,
-        "allowed_origins": [
-            "https://autoshield-nu.vercel.app",
-            "http://localhost:5173",
-            "http://localhost:5174",
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:5174",
-            "http://localhost:3000",
-            "http://localhost:8080",
-        ],
+        "version": "2.0.1",
+        "cors": "header-injection",
         "timestamp": datetime.now().isoformat(),
     }
 
-
-# CORS preflight handler for debugging
-@app.options("/{path:path}")
-async def cors_preflight(path: str):
-    return {"status": "ok", "cors_preflight": True}
-
 @app.middleware("http")
 async def ddos_shield_middleware(request: Request, call_next):
+    # Always pass OPTIONS preflight through so CORSMiddleware can handle it.
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     # Never rate-limit or block on internal/management paths — this prevents
     # Vercel's frontend IP from being falsely blocked when polling.
     _shield_whitelist = (
         "/health", "/auth", "/docs", "/openapi.json",
-        "/ws/", "/events/stream", "/debug",
+        "/ws/", "/events/stream", "/debug", "/stats",
     )
     if request.url.path.startswith(_shield_whitelist):
         return await call_next(request)
@@ -316,6 +318,10 @@ async def ddos_shield_middleware(request: Request, call_next):
 
 @app.middleware("http")
 async def threat_detection_middleware(request: Request, call_next):
+    # Always pass OPTIONS preflight through so CORSMiddleware can handle it.
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     internal_prefixes = (
         "/docs",
         "/openapi.json",
