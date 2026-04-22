@@ -145,12 +145,12 @@ function calculateBezierPoints(p1, p2) {
   const points = [];
   const midX = (p1[1] + p2[1]) / 2;
   const midY = (p1[0] + p2[0]) / 2;
-  
+
   // Create arc midpoint by offsetting perpendicular to the line
   const dx = p1[1] - p2[1];
   const dy = p1[0] - p2[0];
   const length = Math.sqrt(dx * dx + dy * dy);
-  
+
   // Altitude depends on distance
   const altitude = length * 0.15;
   const cp = [midY + (dx / length) * altitude, midX - (dy / length) * altitude];
@@ -329,7 +329,7 @@ const DEFAULT_DOMAINS = [];
 const engine = (() => {
   let listeners = new Set();
   let stateVersion = 0;
-  
+
   let token = localStorage.getItem('as_token');
   let eventSource = null;
   let wsSocket = null;
@@ -347,7 +347,7 @@ const engine = (() => {
       return DEFAULT_DOMAINS;
     }
   })();
-  
+
   let log = [];
   let blockedIPs = new Set();
   let siteHealth = new Map();
@@ -364,10 +364,10 @@ const engine = (() => {
     root_mode: false,
     timestamp: null,
   };
-  
+
   let autoPilotActive = false;
   let simulatorStatus = { running: false, mode: 'Smart AutoPilot' };
-  
+
   // ═══ PREMIUM TIER SYSTEM ═══
   let userTier = localStorage.getItem('as_tier') || 'free'; // 'free' | 'premium'
   // ═══ DDoS DETECTION ENGINE ═══
@@ -472,30 +472,31 @@ const engine = (() => {
   };
 
   const syncDomainsFromContext = (context) => {
-  const siteList = Array.isArray(context?.sites) ? context.sites : [];
-  if (!siteList.length) return;
+    const siteList = Array.isArray(context?.sites) ? context.sites : [];
+    if (!siteList.length) return;
 
-  const normalized = siteList
-    .filter((s) => s && s.id && s.domain)
-    .map((s) => ({
-      domain:  normalizeDomainInput(s.domain),
-      id:      s.id,
-      key:     s.api_key || '',
-      plan:    s.plan || 'free',
-      created: s.created_at || new Date().toISOString(),
-      name:    s.name || s.domain,
-    }))
-    .filter((s) => s.domain);
+    const normalized = siteList
+      .filter((s) => s && s.id && s.domain)
+      .map((s) => ({
+        domain: normalizeDomainInput(s.domain),
+        id: s.id,
+        key: s.api_key || '',
+        plan: s.plan || 'free',
+        created: s.created_at || new Date().toISOString(),
+        name: s.name || s.domain,
+        upstream_url: s.upstream_url || '',
+      }))
+      .filter((s) => s.domain);
 
-  if (!normalized.length) return;
+    if (!normalized.length) return;
 
-  const backendIds = new Set(normalized.map((s) => s.id));
-  const localOnly = domains.filter((d) => d.isLocal && !backendIds.has(d.id));
+    const backendIds = new Set(normalized.map((s) => s.id));
+    const localOnly = domains.filter((d) => d.isLocal && !backendIds.has(d.id));
 
-  domains = [...normalized, ...localOnly];
-  localStorage.setItem('as_domains', JSON.stringify(domains));
-  notify();
-};
+    domains = [...normalized, ...localOnly];
+    localStorage.setItem('as_domains', JSON.stringify(domains));
+    notify();
+  };
 
   const getSiteHealthKey = (siteId, domain) => {
     if (siteId) return `id:${siteId}`;
@@ -534,7 +535,7 @@ const engine = (() => {
       const res = await fetch(`${API_URL}/api/websites/health?${query}`, { headers: getHeaders() });
       if (!res.ok) throw new Error(`Health probe failed (${res.status})`);
       const payload = await res.json();
-      const normalized = { ...payload, status: getHealthStatusLabel(payload) };
+      const normalized = { ...payload, status: payload.status || getHealthStatusLabel(payload) };
       siteHealth.set(key, normalized);
       notify();
       return normalized;
@@ -561,21 +562,21 @@ const engine = (() => {
     ipRequestWindow[ip].push(now);
     // Purge old entries
     ipRequestWindow[ip] = ipRequestWindow[ip].filter(t => now - t < DDOS_WINDOW_MS);
-    
+
     const count = ipRequestWindow[ip].length;
     const threshold = userTier === 'premium' ? DDOS_THRESHOLD_PREMIUM : DDOS_THRESHOLD_FREE;
-    
+
     // Calculate RPS
     const rps = Math.round(count / (DDOS_WINDOW_MS / 1000));
     ddosState.requestsPerSecond = rps;
     if (rps > ddosState.peakRPS) ddosState.peakRPS = rps;
-    
+
     // DDoS detection
     if (count >= threshold && !blockedIPs.has(ip)) {
       // Auto-block this IP
       blockedIPs.add(ip);
       ddosState.mitigatedCount++;
-      
+
       // Update top attackers
       const existing = ddosState.topAttackers.find(a => a.ip === ip);
       if (existing) {
@@ -585,34 +586,34 @@ const engine = (() => {
         ddosState.topAttackers.unshift({ ip, count, lastSeen: new Date().toISOString(), geo: getGeoForIP(ip) });
         if (ddosState.topAttackers.length > 10) ddosState.topAttackers.pop();
       }
-      
+
       if (!ddosState.active) {
         ddosState.active = true;
         ddosState.detectedAt = new Date().toISOString();
-        addNotification('ddos_detected', '🚨 DDoS Attack Detected', `Volumetric attack from ${ip} (${count} req/${DDOS_WINDOW_MS/1000}s). Auto-mitigation engaged.`, 'critical');
+        addNotification('ddos_detected', '🚨 DDoS Attack Detected', `Volumetric attack from ${ip} (${count} req/${DDOS_WINDOW_MS / 1000}s). Auto-mitigation engaged.`, 'critical');
       }
-      
-      addNotification('ip_blocked', '🛡️ IP Auto-Blocked', `${ip} blocked by DDoS shield (${count} requests in ${DDOS_WINDOW_MS/1000}s window)`, 'high');
-      
+
+      addNotification('ip_blocked', '🛡️ IP Auto-Blocked', `${ip} blocked by DDoS shield (${count} requests in ${DDOS_WINDOW_MS / 1000}s window)`, 'high');
+
       // Also try to block via API
-      fetch(`${API_URL}/block`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ ip, reason: `DDoS: ${count} req/${DDOS_WINDOW_MS/1000}s` }) }).catch(() => {});
+      fetch(`${API_URL}/block`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ ip, reason: `DDoS: ${count} req/${DDOS_WINDOW_MS / 1000}s` }) }).catch(() => { });
     }
-    
+
     // Rate limiting check (softer threshold)
     const rateThreshold = Math.floor(threshold * 0.5);
     if (count >= rateThreshold && !rateLimitedIPs.has(ip) && !blockedIPs.has(ip)) {
       rateLimitedIPs.add(ip);
       ipWarnings[ip] = (ipWarnings[ip] || 0) + 1;
-      
+
       if (ipWarnings[ip] >= rateLimitConfig.escalationThreshold) {
         blockedIPs.add(ip);
         addNotification('rate_limit', '⚡ Rate Limit Escalation', `${ip} auto-blocked after ${ipWarnings[ip]} rate limit violations`, 'high');
-        fetch(`${API_URL}/block`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ ip, reason: `Rate limit: ${ipWarnings[ip]} violations` }) }).catch(() => {});
+        fetch(`${API_URL}/block`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ ip, reason: `Rate limit: ${ipWarnings[ip]} violations` }) }).catch(() => { });
       } else {
-        addNotification('rate_limit', '⏱️ Rate Limited', `${ip} throttled (${count} req/${DDOS_WINDOW_MS/1000}s, warning ${ipWarnings[ip]}/${rateLimitConfig.escalationThreshold})`, 'medium');
+        addNotification('rate_limit', '⏱️ Rate Limited', `${ip} throttled (${count} req/${DDOS_WINDOW_MS / 1000}s, warning ${ipWarnings[ip]}/${rateLimitConfig.escalationThreshold})`, 'medium');
       }
     }
-    
+
     // Check geo-blocking
     const geo = getGeoForIP(ip);
     if (blockedCountries.has(geo.country) && !blockedIPs.has(ip)) {
@@ -620,7 +621,7 @@ const engine = (() => {
       addNotification('ip_blocked', '🌐 Geo-Blocked', `${ip} from ${geo.country} blocked by geographic policy`, 'medium');
     }
   };
-  
+
   // Auto-decay DDoS state
   setInterval(() => {
     if (ddosState.active) {
@@ -687,7 +688,7 @@ const engine = (() => {
       const simResp = simRes.status === 'fulfilled' ? simRes.value : null;
       const telResp = telRes.status === 'fulfilled' ? telRes.value : null;
       const healthResp = healthRes.status === 'fulfilled' ? healthRes.value : null;
-      
+
       if (eventsResp && (eventsResp.status === 401 || eventsResp.status === 403)) {
         connection = { online: false, mode: 'unauthorized', lastError: 'Invalid or expired API key' };
         notify();
@@ -698,7 +699,7 @@ const engine = (() => {
         const data = await eventsResp.json();
         const incomingLog = (data.events || data || []);
         log = incomingLog.map(normalizeEvent);
-        
+
       }
       if (blockedResp && blockedResp.ok) {
         const data = await blockedResp.json();
@@ -741,9 +742,11 @@ const engine = (() => {
       const liveMode = wsSocket ? 'websocket' : (eventSource ? 'streaming' : 'polling');
       connection = { online: anyOnline, mode: liveMode, lastError: '' };
       notify();
-    } catch(e) {
+      return stats;  // return for per-site data binding in ManageSite
+    } catch (e) {
       connection = { online: false, mode: 'offline', lastError: String(e?.message || e) };
       notify();
+      return null;
     }
   };
 
@@ -757,7 +760,7 @@ const engine = (() => {
 
     if (eventSource) eventSource.close();
     if (wsSocket) {
-      try { wsSocket.close(); } catch (_) {}
+      try { wsSocket.close(); } catch (_) { }
       wsSocket = null;
     }
     token = userToken;
@@ -815,10 +818,10 @@ const engine = (() => {
         }
         if (log.length > 500) log.pop();
         if (ev.action === 'BLOCKED') blockedIPs.add(ev.src_ip);
-        
+
         // Track for DDoS detection
         if (!isHistoricalEvent && ev.src_ip) trackRequest(ev.src_ip);
-        
+
         // Auto-notification for blocked attacks
         if (!isHistoricalEvent && ev.action === 'BLOCKED' && (ev.severity === 'CRITICAL' || ev.severity === 'HIGH')) {
           addNotification('attack_blocked', `🚫 ${ev.attack_type} Blocked`, `${ev.src_ip} — ${ev.payload?.slice(0, 60) || 'Malicious payload detected'}`, ev.severity === 'CRITICAL' ? 'critical' : 'high');
@@ -835,12 +838,12 @@ const engine = (() => {
         } else if (isHistoricalEvent && stage === 'FIXED') {
           queueHistoricalAlert('fixed', ev);
         }
-        
+
         notify();
-        
+
         if (syncTimer) clearTimeout(syncTimer);
         syncTimer = setTimeout(() => fetchState(), 2000);
-      } catch (err) {}
+      } catch (err) { }
     };
 
     const connectViaSSE = () => {
@@ -850,7 +853,7 @@ const engine = (() => {
         try {
           const incoming = normalizeEvent(JSON.parse(e.data));
           handleIncomingEvent(incoming);
-        } catch (_) {}
+        } catch (_) { }
       };
 
       eventSource.onerror = () => {
@@ -872,9 +875,21 @@ const engine = (() => {
       let wsFallbackToSSE = false;
       let wsHasOpened = false;
 
+      // ═══ 3-second timeout — Render free tier kills WS upgrades silently ═══
+      const wsConnectTimeout = setTimeout(() => {
+        if (!wsHasOpened && wsSocket && wsSocket.readyState !== WebSocket.OPEN) {
+          console.warn('[AutoShield] WS connect timed out — falling back to SSE');
+          wsFallbackToSSE = true;
+          try { wsSocket.close(); } catch (_) { }
+          wsSocket = null;
+          connectViaSSE();
+        }
+      }, 3000);
+
       wsSocket.onopen = () => {
         if (seq !== streamSeq) return;
         wsHasOpened = true;
+        clearTimeout(wsConnectTimeout);
         connection = { online: true, mode: 'websocket', lastError: '' };
         retryCount = 0;
         notify();
@@ -884,15 +899,16 @@ const engine = (() => {
         try {
           const incoming = normalizeEvent(JSON.parse(msg.data));
           handleIncomingEvent(incoming);
-        } catch (_) {}
+        } catch (_) { }
       };
 
       wsSocket.onerror = () => {
         if (seq !== streamSeq) return;
+        clearTimeout(wsConnectTimeout);
         if (wsHasOpened) return;
         wsFallbackToSSE = true;
         if (wsSocket) {
-          try { wsSocket.close(); } catch (_) {}
+          try { wsSocket.close(); } catch (_) { }
           wsSocket = null;
         }
         connectViaSSE();
@@ -900,6 +916,7 @@ const engine = (() => {
 
       wsSocket.onclose = () => {
         if (seq !== streamSeq) return;
+        clearTimeout(wsConnectTimeout);
         if (wsFallbackToSSE) return;
         if (wsSocket) {
           wsSocket = null;
@@ -1017,7 +1034,7 @@ const engine = (() => {
           authMethod: 'enterprise',
         };
       }
-    } catch (_) {}
+    } catch (_) { }
     return null;
   };
 
@@ -1035,7 +1052,7 @@ const engine = (() => {
       addNotification('system', '🤖 AutoPilot Engaged', 'Autonomous threat detection and response is now active.', 'success');
       if (!res.ok) throw new Error('Remote simulator unavailable');
       notify();
-    } catch(e) {}
+    } catch (e) { }
   };
 
   const stopAutoPilot = async () => {
@@ -1049,17 +1066,17 @@ const engine = (() => {
       autoPilotActive = false;
       addNotification('system', '⏸️ AutoPilot Halted', 'Manual control restored. Monitoring continues passively.', 'info');
       notify();
-    } catch(e) {}
+    } catch (e) { }
   };
 
   const simulateBurst = async (type, siteId = null) => {
     try {
       const ip = IP_POOL[Math.floor(Math.random() * IP_POOL.length)];
       const payload = PAYLOADS[type][Math.floor(Math.random() * PAYLOADS[type].length)];
-      
+
       // Track locally for DDoS detection
       trackRequest(ip);
-      
+
       await fetch(`${API_URL}/events`, {
         method: 'POST',
         headers: getHeaders(),
@@ -1071,7 +1088,7 @@ const engine = (() => {
         })
       });
       fetchState(siteId);
-    } catch(e) {}
+    } catch (e) { }
   };
 
   // Simulate DDoS attack for testing
@@ -1168,20 +1185,20 @@ const engine = (() => {
 
   return {
     subscribe, simulateBurst, simulateDDoS,
-    getLog: () => [...log], 
+    getLog: () => [...log],
     getRecentLog: (n = 20) => log.slice(0, n),
     getBlockedIPs: () => Array.from(blockedIPs),
     blockIP: async (ip, reason = 'Manual') => {
       blockedIPs.add(ip);
       addNotification('ip_blocked', '🚫 IP Blocked', `${ip} — ${reason}`, 'high');
-      await fetch(`${API_URL}/block`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ ip, reason }) }).catch(() => {});
+      await fetch(`${API_URL}/block`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ ip, reason }) }).catch(() => { });
       notify();
       fetchState();
     },
     unblockIP: async (ip) => {
       blockedIPs.delete(ip);
       addNotification('system', '✅ IP Unblocked', `${ip} removed from blocklist`, 'info');
-      await fetch(`${API_URL}/block/${ip}`, { method: 'DELETE', headers: getHeaders() }).catch(() => {});
+      await fetch(`${API_URL}/block/${ip}`, { method: 'DELETE', headers: getHeaders() }).catch(() => { });
       notify();
       fetchState();
     },
@@ -1195,142 +1212,142 @@ const engine = (() => {
     getConnection: () => connection,
     getDomains: () => domains,
     addDomain: async (domain, upstreamUrl = null) => {
-  const normalized = normalizeDomainInput(domain);
-  if (!normalized) return domains;
+      const normalized = normalizeDomainInput(domain);
+      if (!normalized) return domains;
 
-  const maxSites = userTier === 'premium' ? 999 : 3;
-  if (domains.length >= maxSites && userTier !== 'premium') {
-    addNotification('system', '⚠️ Site Limit Reached', `Free tier allows ${maxSites} sites. Upgrade for unlimited.`, 'medium');
-    return domains;
-  }
-
-  const exists = domains.some((d) => normalizeDomainInput(d.domain) === normalized);
-  if (exists) return domains;
-
-  const upstream = upstreamUrl || `http://${normalized}`;
-  try {
-    const res = await fetch(`${API_URL}/api/websites`, {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({
-        name:   normalized,
-        domain: normalized,
-        plan:   userTier === 'premium' ? 'premium' : 'free',
-        upstream_url: upstream,
-      }),
-    });
-
-    if (res.ok) {
-      const siteData = await res.json();
-      const newEntry = {
-        domain:  normalized,
-        id:      siteData.site_id || siteData.id,
-        key:     siteData.api_key || '',
-        plan:    userTier === 'premium' ? 'Premium' : 'Free',
-        created: new Date().toISOString(),
-        name:    normalized,
-        upstream: upstream,
-      };
-      domains = [...domains, newEntry];
-      localStorage.setItem('as_domains', JSON.stringify(domains));
-      addNotification('system', '🌐 Site Registered & Protected', `${normalized} → ${upstream} is now protected by AutoShield.`, 'success');
-      notify();
-      return domains;
-    }
-
-    if (res.status === 403) {
-      const err = await res.json().catch(() => ({}));
-      addNotification('system', '⚠️ Limit Reached', err.detail || 'Plan limit reached.', 'medium');
-      return domains;
-    }
-
-    throw new Error(`Backend returned ${res.status}`);
-  } catch (err) {
-    const localEntry = {
-      domain:  normalized,
-      id:      `local_${Math.random().toString(36).slice(2, 10)}`,
-      key:     `as_local_${Math.random().toString(36).slice(2, 18)}`,
-      plan:    userTier === 'premium' ? 'Premium' : 'Free',
-      created: new Date().toISOString(),
-      name:    normalized,
-      isLocal: true,
-    };
-    domains = [...domains, localEntry];
-    localStorage.setItem('as_domains', JSON.stringify(domains));
-    addNotification('system', '🌐 Site Added (Local Only)', `${normalized} added locally. Log in again to sync with backend.`, 'info');
-    notify();
-    return domains;
-  }
-},
-    getCERTAdvisories: () => CERTIN_ADVISORIES,
-    removeDomain: async (index) => {
-  if (index < 0 || index >= domains.length) return domains;
-  const removed = domains[index];
-  let removedLocallyOnly = false;
-
-  // For backend sites, delete first
-  if (removed.id && !removed.isLocal) {
-    try {
-      const res = await fetch(`${API_URL}/api/websites/${removed.id}`, {
-        method: 'DELETE',
-        headers: getHeaders(),
-      });
-      const data = await res.json().catch(() => ({}));
-      console.log('DELETE RESPONSE:', data);
-
-      if (res.ok && data?.context) {
-        syncDomainsFromContext(data.context);
+      const maxSites = userTier === 'premium' ? 999 : 3;
+      if (domains.length >= maxSites && userTier !== 'premium') {
+        addNotification('system', '⚠️ Site Limit Reached', `Free tier allows ${maxSites} sites. Upgrade for unlimited.`, 'medium');
+        return domains;
       }
 
-      if (!res.ok) {
-        const detailRaw = data?.detail;
-        const detail = typeof detailRaw === 'string'
-          ? detailRaw
-          : (detailRaw?.error || data?.error || data?.message || '').trim();
+      const exists = domains.some((d) => normalizeDomainInput(d.domain) === normalized);
+      if (exists) return domains;
 
-        if (res.status === 404) {
+      const upstream = upstreamUrl || `http://${normalized}`;
+      try {
+        const res = await fetch(`${API_URL}/api/websites`, {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({
+            name: normalized,
+            domain: normalized,
+            plan: userTier === 'premium' ? 'premium' : 'free',
+            upstream_url: upstream,
+          }),
+        });
+
+        if (res.ok) {
+          const siteData = await res.json();
+          const newEntry = {
+            domain: normalized,
+            id: siteData.site_id || siteData.id,
+            key: siteData.api_key || '',
+            plan: userTier === 'premium' ? 'Premium' : 'Free',
+            created: new Date().toISOString(),
+            name: normalized,
+            upstream_url: upstream,
+          };
+          domains = [...domains, newEntry];
+          localStorage.setItem('as_domains', JSON.stringify(domains));
+          addNotification('system', '🌐 Site Registered & Protected', `${normalized} → ${upstream} is now protected by AutoShield.`, 'success');
+          notify();
+          return domains;
+        }
+
+        if (res.status === 403) {
+          const err = await res.json().catch(() => ({}));
+          addNotification('system', '⚠️ Limit Reached', err.detail || 'Plan limit reached.', 'medium');
+          return domains;
+        }
+
+        throw new Error(`Backend returned ${res.status}`);
+      } catch (err) {
+        const localEntry = {
+          domain: normalized,
+          id: `local_${Math.random().toString(36).slice(2, 10)}`,
+          key: `as_local_${Math.random().toString(36).slice(2, 18)}`,
+          plan: userTier === 'premium' ? 'Premium' : 'Free',
+          created: new Date().toISOString(),
+          name: normalized,
+          isLocal: true,
+        };
+        domains = [...domains, localEntry];
+        localStorage.setItem('as_domains', JSON.stringify(domains));
+        addNotification('system', '🌐 Site Added (Local Only)', `${normalized} added locally. Log in again to sync with backend.`, 'info');
+        notify();
+        return domains;
+      }
+    },
+    getCERTAdvisories: () => CERTIN_ADVISORIES,
+    removeDomain: async (index) => {
+      if (index < 0 || index >= domains.length) return domains;
+      const removed = domains[index];
+      let removedLocallyOnly = false;
+
+      // For backend sites, delete first
+      if (removed.id && !removed.isLocal) {
+        try {
+          const res = await fetch(`${API_URL}/api/websites/${removed.id}`, {
+            method: 'DELETE',
+            headers: getHeaders(),
+          });
+          const data = await res.json().catch(() => ({}));
+          console.log('DELETE RESPONSE:', data);
+
+          if (res.ok && data?.context) {
+            syncDomainsFromContext(data.context);
+          }
+
+          if (!res.ok) {
+            const detailRaw = data?.detail;
+            const detail = typeof detailRaw === 'string'
+              ? detailRaw
+              : (detailRaw?.error || data?.error || data?.message || '').trim();
+
+            if (res.status === 404) {
+              removedLocallyOnly = true;
+              addNotification(
+                'system',
+                '⚠️ Backend Link Missing',
+                detail || 'Website was already missing in backend. Removed from local dashboard.',
+                'medium'
+              );
+            } else {
+              addNotification(
+                'system',
+                '❌ Delete Failed',
+                detail || `Backend rejected delete request (${res.status}).`,
+                'high'
+              );
+              return domains; // keep in UI for retrial
+            }
+          }
+        } catch (err) {
           removedLocallyOnly = true;
           addNotification(
             'system',
-            '⚠️ Backend Link Missing',
-            detail || 'Website was already missing in backend. Removed from local dashboard.',
+            '⚠️ Backend Offline',
+            'Removed locally. It may reappear after sync if backend deletion did not complete.',
             'medium'
           );
-        } else {
-          addNotification(
-            'system',
-            '❌ Delete Failed',
-            detail || `Backend rejected delete request (${res.status}).`,
-            'high'
-          );
-          return domains; // keep in UI for retrial
         }
       }
-    } catch (err) {
-      removedLocallyOnly = true;
+
+      // Now update local
+      domains = domains.filter((_, i) => i !== index);
+      localStorage.setItem('as_domains', JSON.stringify(domains));
       addNotification(
         'system',
-        '⚠️ Backend Offline',
-        'Removed locally. It may reappear after sync if backend deletion did not complete.',
-        'medium'
+        '🗑️ Site Removed',
+        removedLocallyOnly
+          ? `${removed.domain} removed from local dashboard.`
+          : `${removed.domain} removed from your account.`,
+        'info'
       );
-    }
-  }
-
-  // Now update local
-  domains = domains.filter((_, i) => i !== index);
-  localStorage.setItem('as_domains', JSON.stringify(domains));
-  addNotification(
-    'system',
-    '🗑️ Site Removed',
-    removedLocallyOnly
-      ? `${removed.domain} removed from local dashboard.`
-      : `${removed.domain} removed from your account.`,
-    'info'
-  );
-  notify();
-  return domains;
-},
+      notify();
+      return domains;
+    },
     lookupCVE: (query) => {
       if (!query) return null;
       const q = query.trim().toUpperCase();
@@ -1347,8 +1364,8 @@ const engine = (() => {
 
       const advisoryCvss =
         advisory.severity === 'CRITICAL' ? 9.8 :
-        advisory.severity === 'HIGH' ? 8.1 :
-        advisory.severity === 'MEDIUM' ? 6.4 : 4.0;
+          advisory.severity === 'HIGH' ? 8.1 :
+            advisory.severity === 'MEDIUM' ? 6.4 : 4.0;
 
       return {
         cve_id: advisory.id,
@@ -1433,7 +1450,7 @@ const engine = (() => {
           notify();
           return data;
         }
-      } catch (_) {}
+      } catch (_) { }
     },
 
     // ═══ WEBHOOKS API ═══
@@ -1550,7 +1567,7 @@ const engine = (() => {
     setRateLimit: (config) => {
       if (userTier !== 'premium') return false;
       Object.assign(rateLimitConfig, config);
-      addNotification('system', '⚙️ Rate Limit Updated', `Window: ${rateLimitConfig.windowMs/1000}s, Max: ${rateLimitConfig.maxRequests} req`, 'info');
+      addNotification('system', '⚙️ Rate Limit Updated', `Window: ${rateLimitConfig.windowMs / 1000}s, Max: ${rateLimitConfig.maxRequests} req`, 'info');
       notify();
       return true;
     },
@@ -1641,7 +1658,7 @@ const engine = (() => {
       if (typeof window !== 'undefined') window.location.reload();
       if (eventSource) eventSource.close();
       if (wsSocket) {
-        try { wsSocket.close(); } catch (_) {}
+        try { wsSocket.close(); } catch (_) { }
         wsSocket = null;
       }
       if (localAutoPilotTimer) {
@@ -1854,7 +1871,7 @@ function GlobalConsole() {
       const parts = cmd.split(' ');
       const addLine = (msg, type) => setLogs((curr) => [...curr, { type, msg }]);
       let res = '';
-      
+
       switch (parts[0]) {
         case '/autopilot':
           if (!parts[1]) {
@@ -2008,7 +2025,7 @@ function Landing() {
 
   // Simulate live ticker randomization
   useEffect(() => {
-    const ips = ['45.142.212.100','91.132.147.22','185.220.101.34','194.165.16.8','77.91.68.59','192.42.116.25','185.107.57.139','91.108.4.215','198.54.117.200','103.27.202.50'];
+    const ips = ['45.142.212.100', '91.132.147.22', '185.220.101.34', '194.165.16.8', '77.91.68.59', '192.42.116.25', '185.107.57.139', '91.108.4.215', '198.54.117.200', '103.27.202.50'];
     const interval = setInterval(() => {
       setTickerEvents(prev => {
         const copy = [...prev];
@@ -2035,7 +2052,7 @@ function Landing() {
     }
   };
 
-  const wizApiKey = useMemo(() => wizDomain ? `as_${wizDomain.replace(/\./g,'_').substring(0,12)}_${Math.random().toString(36).substring(2,10)}` : '', [wizDomain]);
+  const wizApiKey = useMemo(() => wizDomain ? `as_${wizDomain.replace(/\./g, '_').substring(0, 12)}_${Math.random().toString(36).substring(2, 10)}` : '', [wizDomain]);
 
   return (
     <>
@@ -2058,15 +2075,15 @@ function Landing() {
       <motion.section className="evolve-hero" style={{ opacity }}>
         {/* Background grid lines */}
         <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)', backgroundSize: '80px 80px', pointerEvents: 'none' }} />
-        
+
         <motion.div style={{ y: y1 }} className="evolve-hero-content">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 1 }} className="hero-eyebrow">
             <span className="eyebrow-dot"></span> Enterprise-Grade · AI-Powered · Real-Time SOC
           </motion.div>
 
           <div className="title-wrap">
-            {['A','U','T','O','S','H','I','E','L','D'].map((letter, i) => (
-              <motion.span key={i} initial={{ opacity: 0, y: '100%', rotateX: -90 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} transition={{ duration: 1.2, delay: i * 0.06, ease: [0.16,1,0.3,1] }} className="title-letter">
+            {['A', 'U', 'T', 'O', 'S', 'H', 'I', 'E', 'L', 'D'].map((letter, i) => (
+              <motion.span key={i} initial={{ opacity: 0, y: '100%', rotateX: -90 }} animate={{ opacity: 1, y: 0, rotateX: 0 }} transition={{ duration: 1.2, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] }} className="title-letter">
                 {letter}
               </motion.span>
             ))}
@@ -2128,7 +2145,7 @@ function Landing() {
           <motion.div initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.9 }} style={{ textAlign: 'center', marginBottom: 90 }}>
             <div style={{ fontSize: 11, letterSpacing: 4, color: 'rgba(0,255,156,0.7)', fontFamily: 'monospace', marginBottom: 20, textTransform: 'uppercase' }}>Why Fortune 500s Choose AutoShield</div>
             <h3 style={{ fontFamily: 'Anton', fontSize: 'clamp(38px, 6vw, 80px)', margin: 0, lineHeight: 1, background: 'linear-gradient(135deg, #fff 40%, rgba(255,255,255,0.3))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              REAL-TIME INTELLIGENCE.<br/>AUTONOMOUS DEFENSE.
+              REAL-TIME INTELLIGENCE.<br />AUTONOMOUS DEFENSE.
             </h3>
             <p style={{ color: 'rgba(255,255,255,0.32)', marginTop: 24, maxWidth: 560, margin: '24px auto 0', fontSize: 16, lineHeight: 1.8 }}>
               AutoShield combines edge-native AI threat modelling, autonomous response, and enterprise-grade observability — all in one platform that never sleeps.
@@ -2165,7 +2182,7 @@ function Landing() {
             <div className="split-text">
               <motion.div initial={{ opacity: 0, x: -30 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }}>
                 <div style={{ fontSize: 11, letterSpacing: 4, color: 'rgba(56,189,248,0.8)', fontFamily: 'monospace', marginBottom: 16, textTransform: 'uppercase' }}>Effortless Integration</div>
-                <h3 className="section-title">CONNECT<br/><span className="text-muted">IN 3 STEPS.</span></h3>
+                <h3 className="section-title">CONNECT<br /><span className="text-muted">IN 3 STEPS.</span></h3>
                 <p className="section-desc">No DevOps required. No code changes. No downtime. Just point your DNS and AutoShield handles the rest — instantly.</p>
                 <ul className="evolve-steps" style={{ marginTop: 32 }}>
                   <li><div className={`step-num ${wizStep >= 0 ? 'active' : ''}`}>01</div> Enter your domain</li>
@@ -2189,7 +2206,7 @@ function Landing() {
               <div className="connect-wizard">
                 {/* Progress steps */}
                 <div className="connect-wizard-steps">
-                  {[0,1,2].map(s => (
+                  {[0, 1, 2].map(s => (
                     <div key={s} className={`cwiz-step ${wizStep > s ? 'done' : wizStep === s ? 'active' : ''}`} />
                   ))}
                 </div>
@@ -2211,7 +2228,7 @@ function Landing() {
                       {wizLoading ? 'Validating domain...' : 'Continue →'}
                     </button>
                     <div style={{ marginTop: 20, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                      {['shop.yourco.com','api.fintech.io','secure.bank.com'].map(ex => (
+                      {['shop.yourco.com', 'api.fintech.io', 'secure.bank.com'].map(ex => (
                         <button key={ex} onClick={() => setWizDomain(ex)} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, color: 'rgba(255,255,255,0.35)', fontSize: 11, padding: '5px 11px', fontFamily: 'monospace' }}>{ex}</button>
                       ))}
                     </div>
@@ -2325,7 +2342,7 @@ function Landing() {
       <section id="pricing" className="evolve-section">
         <div className="evolve-container text-center">
           <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.8 }}>
-            <h3 className="section-title">PREMIUM ACCESS.<br/><span className="text-muted">FOR FREE.</span></h3>
+            <h3 className="section-title">PREMIUM ACCESS.<br /><span className="text-muted">FOR FREE.</span></h3>
             <p className="section-desc centered mx-auto mb-12" style={{ marginTop: 16 }}>Enterprise-grade infrastructure without the ridiculous price tags. Upgrade when you're ready.</p>
           </motion.div>
           <div className="pricing-grid" style={{ marginTop: 56 }}>
@@ -2371,7 +2388,7 @@ function Landing() {
           <motion.div initial={{ opacity: 0, y: 50 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 1 }}>
             <div style={{ fontSize: 11, letterSpacing: 4, color: 'rgba(0,255,156,0.7)', fontFamily: 'monospace', marginBottom: 28, textTransform: 'uppercase' }}>Start protecting in 60 seconds</div>
             <h2 style={{ fontFamily: 'Anton', fontSize: 'clamp(48px, 8vw, 110px)', margin: '0 0 28px', lineHeight: 0.95, background: 'linear-gradient(135deg, #ffffff 50%, rgba(255,255,255,0.2))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              SECURE YOUR<br/>BILLION-DOLLAR SITE.
+              SECURE YOUR<br />BILLION-DOLLAR SITE.
             </h2>
             <p style={{ color: 'rgba(255,255,255,0.28)', fontSize: 17, maxWidth: 520, margin: '0 auto 64px', lineHeight: 1.8 }}>
               Fortune 500 companies, global fintechs, and leading e-commerce platforms trust AutoShield to protect their most critical infrastructure — around the clock, autonomously.
@@ -2447,7 +2464,7 @@ function Login() {
           try {
             const data = await res.json();
             detail = data?.detail || detail;
-          } catch (_) {}
+          } catch (_) { }
           throw new Error(detail);
         }
         const data = await res.json();
@@ -2518,7 +2535,7 @@ function Login() {
         login(user);
         navigate('/dashboard');
       }
-    } catch(err) {
+    } catch (err) {
       setError(err.message || "An unexpected error occurred.");
     } finally {
       setSubmitting(false);
@@ -2548,8 +2565,8 @@ function Login() {
 
   return (
     <div className="login-page evolve-hero" style={{ height: '100vh', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-      <MotionDiv 
-        className="glass-panel" 
+      <MotionDiv
+        className="glass-panel"
         style={{ width: '100%', maxWidth: '440px', padding: '40px', transform: 'rotate(0deg)' }}
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -2591,7 +2608,7 @@ function Login() {
             <span style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>Authenticating via OAuth 2.0...</span>
           ) : (
             <>
-              <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" /><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" /><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" /><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" /></svg>
               Sign in with Google
             </>
           )}
@@ -2736,8 +2753,8 @@ function PremiumLock({ children, featureName, description }) {
         padding: 40, textAlign: 'center', backdropFilter: 'blur(4px)',
         zIndex: 10, border: '1px solid rgba(255,215,0,0.1)'
       }}>
-        <div style={{ 
-          width: 48, height: 48, borderRadius: '50%', background: 'rgba(255,215,0,0.1)', 
+        <div style={{
+          width: 48, height: 48, borderRadius: '50%', background: 'rgba(255,215,0,0.1)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20,
           border: '1px solid rgba(255,215,0,0.3)', color: '#ffd700'
         }}>
@@ -2745,13 +2762,13 @@ function PremiumLock({ children, featureName, description }) {
         </div>
         <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', color: 'white' }}>{featureName || 'Premium Feature'}</h3>
         <p style={{ fontSize: 13, color: 'var(--e-muted)', marginBottom: 24, maxWidth: 300 }}>{description || 'Upgrade to Premium to unlock this advanced enterprise capability.'}</p>
-        <button 
+        <button
           onClick={() => navigate('/pricing')}
-          className="evolve-btn" 
-          style={{ 
-            background: 'linear-gradient(135deg, #ffd700, #ff8c00)', 
-            color: '#000', border: 'none', padding: '10px 24px', 
-            fontSize: 12, fontWeight: 800, borderRadius: 8 
+          className="evolve-btn"
+          style={{
+            background: 'linear-gradient(135deg, #ffd700, #ff8c00)',
+            color: '#000', border: 'none', padding: '10px 24px',
+            fontSize: 12, fontWeight: 800, borderRadius: 8
           }}
         >
           UPGRADE TO UNLOCK
@@ -2765,12 +2782,12 @@ function Layout() {
   const { user, logout: authLogout } = useAuth();
   const navigate = useNavigate();
   useEngineSnapshot(() => engine.getStateVersion());
-  
+
   const [showNotifs, setShowNotifs] = useState(false);
   const notifications = engine.getNotifications();
   const recentNotifications = notifications.slice(0, 3);
   const unreadCount = recentNotifications.filter((n) => !n.read).length;
-  
+
   const [lockdownState, setLockdownState] = useState('none'); // 'none', 'active', 'fixing', 'fixed'
   const [lockdownPulseId, setLockdownPulseId] = useState(0);
 
@@ -2780,7 +2797,7 @@ function Layout() {
     const isRecent = now - new Date(e.timestamp).getTime() < 15000;
     return !isEventFixed(e) && isRecent;
   }).length;
-  
+
   useEffect(() => {
     if (activeThreats >= 5 && lockdownState !== 'active') {
       setLockdownState('active');
@@ -2847,9 +2864,9 @@ function Layout() {
                   {(() => {
                     const diffMs = Date.now() - new Date(notif.timestamp).getTime();
                     if (diffMs < 10000) return 'just now';
-                    if (diffMs < 60000) return `${Math.floor(diffMs/1000)}s ago`;
-                    if (diffMs < 3600000) return `${Math.floor(diffMs/60000)}m ago`;
-                    return `${Math.floor(diffMs/3600000)}h ago`;
+                    if (diffMs < 60000) return `${Math.floor(diffMs / 1000)}s ago`;
+                    if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}m ago`;
+                    return `${Math.floor(diffMs / 3600000)}h ago`;
                   })()}
                 </span>
               </div>
@@ -2938,11 +2955,11 @@ function Layout() {
                 <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: 'var(--e-green)' }}></span> ENGAGE AUTOPILOT
               </button>
             )}
-            
+
             <div style={{ position: 'relative' }}>
-              <button 
-                className="evolve-btn-outline" 
-                style={{ padding: '8px 16px', fontSize: '13px', position: 'relative' }} 
+              <button
+                className="evolve-btn-outline"
+                style={{ padding: '8px 16px', fontSize: '13px', position: 'relative' }}
                 onClick={() => { setShowNotifs(!showNotifs); if (!showNotifs) engine.markAllRead(); }}
               >
                 <HiOutlineBell /> Alerts
@@ -2950,7 +2967,7 @@ function Layout() {
                   <span style={{ position: 'absolute', top: -5, right: -5, background: 'var(--red)', color: 'white', fontSize: 10, padding: '2px 6px', borderRadius: 10, fontWeight: 'bold' }}>{unreadCount}</span>
                 )}
               </button>
-              
+
               {showNotifs && (
                 <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 12, width: 350, background: 'rgba(20,20,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, backdropFilter: 'blur(20px)', zIndex: 100, overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
                   <div style={{ padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -3110,7 +3127,7 @@ function Dashboard() {
     reader.onload = (ev) => {
       const text = ev.target.result;
       const count = engine.parseAndInjectLogs(text);
-      if(count > 0) alert(`FORENSIC ENGINE SUCCESS: Interpolated ${count} access log events directly into the Fusion Dashboard map matrices.`);
+      if (count > 0) alert(`FORENSIC ENGINE SUCCESS: Interpolated ${count} access log events directly into the Fusion Dashboard map matrices.`);
       else alert(`FORENSIC FATAL: No Nginx/Apache logs mapped.`);
     };
     reader.readAsText(file);
@@ -3125,7 +3142,7 @@ function Dashboard() {
         </div>
         <div style={{ textAlign: 'right' }}>
           <label className="evolve-button-secondary" style={{ display: 'inline-block', cursor: 'pointer', padding: '8px 16px', border: '1px solid var(--e-muted)', borderRadius: 4, fontSize: 12 }}>
-            <HiOutlineMagnifyingGlass style={{ marginRight: 6, verticalAlign: 'middle', marginTop: -2 }} /> 
+            <HiOutlineMagnifyingGlass style={{ marginRight: 6, verticalAlign: 'middle', marginTop: -2 }} />
             Upload Forensic Log (.log)
             <input type="file" accept=".log,.txt" style={{ display: 'none' }} onChange={handleFileUpload} />
           </label>
@@ -3240,7 +3257,7 @@ function CommandCenter({ log, chartData, trafficWindow, setTrafficWindow, threat
           ))}
         </div>
         <div style={{ height: 24, width: 1, background: 'rgba(255,255,255,0.1)' }} />
-        <button 
+        <button
           className={`autopilot-btn ${isAutoPilot ? 'active' : ''}`}
           onClick={() => isAutoPilot ? engine.stopAutoPilot() : engine.startAutoPilot()}
           style={{
@@ -3322,10 +3339,10 @@ function CommandCenter({ log, chartData, trafficWindow, setTrafficWindow, threat
             <div className="feed" style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               {log.length === 0 && <div className="feed-empty">🟢 Platform Secure - Monitoring inbound traffic...</div>}
               {log.map((ev, i) => (
-                <motion.div 
-                  initial={{ opacity: 0, x: -10 }} 
-                  animate={{ opacity: 1, x: 0 }} 
-                  className="feed-item" 
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="feed-item"
                   key={ev.id || i}
                   style={{ borderLeft: `2px solid ${SEV_COLORS[ev.severity] || 'transparent'}`, paddingLeft: 10 }}
                 >
@@ -3391,11 +3408,11 @@ function MonitoringTab() {
   const sys = {
     cpu: rawSys.cpu || 0,
     memory: { percent: typeof rawSys.memory === 'object' ? (rawSys.memory?.percent ?? 0) : (rawSys.memory ?? 0) },
-    disk:   { percent: typeof rawSys.disk === 'object'   ? (rawSys.disk?.percent   ?? 0) : (rawSys.disk   ?? 0) },
+    disk: { percent: typeof rawSys.disk === 'object' ? (rawSys.disk?.percent ?? 0) : (rawSys.disk ?? 0) },
     uptime: rawSys.uptime || 0,
   };
   const audit = stats.audit || { security_score: 100, ssl_status: 'VALID', headers: {} };
-  
+
   return (
     <div className="dash-grid">
       <div className="glass-card">
@@ -3421,65 +3438,65 @@ function MonitoringTab() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
-           <div className="glass-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <div style={{ fontSize: 11, color: 'var(--e-muted)', marginBottom: 15, fontWeight: 700 }}>HOST RESOURCE GAUGES</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 6 }}>
-                    <span style={{ color: 'var(--e-muted)' }}>PROCESSOR LOAD</span>
-                    <span style={{ color: 'var(--e-green)', fontWeight: 700 }}>{sys.cpu}%</span>
-                  </div>
-                  <div style={{ height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${sys.cpu}%` }} style={{ height: '100%', background: 'linear-gradient(90deg, #00ff88, #00ffee)', boxShadow: '0 0 15px rgba(0,255,136,0.3)' }} />
-                  </div>
+          <div className="glass-card" style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <div style={{ fontSize: 11, color: 'var(--e-muted)', marginBottom: 15, fontWeight: 700 }}>HOST RESOURCE GAUGES</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 6 }}>
+                  <span style={{ color: 'var(--e-muted)' }}>PROCESSOR LOAD</span>
+                  <span style={{ color: 'var(--e-green)', fontWeight: 700 }}>{sys.cpu}%</span>
                 </div>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 6 }}>
-                    <span style={{ color: 'var(--e-muted)' }}>MEMORY UTILIZATION</span>
-                    <span style={{ color: 'var(--cyan)', fontWeight: 700 }}>{sys.memory.percent}%</span>
-                  </div>
-                  <div style={{ height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${sys.memory.percent}%` }} style={{ height: '100%', background: 'linear-gradient(90deg, #00ccff, #0066ff)', boxShadow: '0 0 15px rgba(0,204,255,0.3)' }} />
-                  </div>
+                <div style={{ height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${sys.cpu}%` }} style={{ height: '100%', background: 'linear-gradient(90deg, #00ff88, #00ffee)', boxShadow: '0 0 15px rgba(0,255,136,0.3)' }} />
                 </div>
               </div>
-           </div>
-           
-           <div className="glass-card" style={{ background: 'rgba(0,255,136,0.03)', border: '1px solid rgba(0,255,136,0.1)' }}>
-              <div style={{ fontSize: 11, color: 'var(--e-muted)', marginBottom: 15, fontWeight: 700 }}>AUTO-SHIELD SECURITY SCORE</div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 30, height: '80%' }}>
-                 <div style={{ position: 'relative', width: 100, height: 100 }}>
-                    <svg viewBox="0 0 36 36" style={{ width: 100, height: 100, transform: 'rotate(-90deg)' }}>
-                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
-                      <motion.path initial={{ strokeDasharray: "0, 100" }} animate={{ strokeDasharray: `${audit.security_score}, 100` }} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke={audit.security_score > 80 ? 'var(--e-green)' : 'var(--yellow)'} strokeWidth="3" strokeLinecap="round" />
-                    </svg>
-                    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: 24, fontWeight: 800, color: 'white' }}>{audit.security_score}</div>
-                 </div>
-                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: audit.ssl_status === 'VALID' ? 'var(--e-green)' : 'var(--red)' }}>
-                      {audit.ssl_status === 'VALID' ? '🛡️ SSL Certificate Valid' : '⚠️ SSL Issue Detected'}
-                    </div>
-                    <div style={{ fontSize: 10, color: 'var(--e-muted)' }}>Audit Rank: {audit.security_score > 90 ? 'AAA (Elite)' : 'B (Action Required)'}</div>
-                    <div style={{ marginTop: 5, padding: '4px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, fontSize: 9, fontFamily: 'var(--mono)' }}>
-                      EXPIRES: {audit.ssl_expiry ? new Date(audit.ssl_expiry).toLocaleDateString() : 'N/A'}
-                    </div>
-                 </div>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 6 }}>
+                  <span style={{ color: 'var(--e-muted)' }}>MEMORY UTILIZATION</span>
+                  <span style={{ color: 'var(--cyan)', fontWeight: 700 }}>{sys.memory.percent}%</span>
+                </div>
+                <div style={{ height: 8, background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden' }}>
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${sys.memory.percent}%` }} style={{ height: '100%', background: 'linear-gradient(90deg, #00ccff, #0066ff)', boxShadow: '0 0 15px rgba(0,204,255,0.3)' }} />
+                </div>
               </div>
-           </div>
+            </div>
+          </div>
+
+          <div className="glass-card" style={{ background: 'rgba(0,255,136,0.03)', border: '1px solid rgba(0,255,136,0.1)' }}>
+            <div style={{ fontSize: 11, color: 'var(--e-muted)', marginBottom: 15, fontWeight: 700 }}>AUTO-SHIELD SECURITY SCORE</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 30, height: '80%' }}>
+              <div style={{ position: 'relative', width: 100, height: 100 }}>
+                <svg viewBox="0 0 36 36" style={{ width: 100, height: 100, transform: 'rotate(-90deg)' }}>
+                  <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="3" />
+                  <motion.path initial={{ strokeDasharray: "0, 100" }} animate={{ strokeDasharray: `${audit.security_score}, 100` }} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke={audit.security_score > 80 ? 'var(--e-green)' : 'var(--yellow)'} strokeWidth="3" strokeLinecap="round" />
+                </svg>
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: 24, fontWeight: 800, color: 'white' }}>{audit.security_score}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: audit.ssl_status === 'VALID' ? 'var(--e-green)' : 'var(--red)' }}>
+                  {audit.ssl_status === 'VALID' ? '🛡️ SSL Certificate Valid' : '⚠️ SSL Issue Detected'}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--e-muted)' }}>Audit Rank: {audit.security_score > 90 ? 'AAA (Elite)' : 'B (Action Required)'}</div>
+                <div style={{ marginTop: 5, padding: '4px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: 4, fontSize: 9, fontFamily: 'var(--mono)' }}>
+                  EXPIRES: {audit.ssl_expiry ? new Date(audit.ssl_expiry).toLocaleDateString() : 'N/A'}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        
+
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 15, color: 'var(--e-muted)', letterSpacing: 1 }}>AUTO-DETECTED SECURITY HEADERS</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
-           {['HSTS', 'CSP', 'X-Frame-Options', 'X-Content-Type'].map((h, i) => {
-              const key = h === 'X-Frame-Options' ? 'XFO' : (h === 'X-Content-Type' ? 'X-Content-Type' : h);
-              const active = audit.headers && audit.headers[key];
-              return (
-                <div key={i} className="glass-card" style={{ background: active ? 'rgba(0,255,136,0.05)' : 'rgba(255,80,80,0.05)', border: active ? '1px solid rgba(0,255,136,0.1)' : '1px solid rgba(255,80,80,0.1)', padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                   <span style={{ fontSize: 10, fontWeight: 700, color: active ? 'var(--e-green)' : 'var(--red)' }}>{h}</span>
-                   <span style={{ fontSize: 14 }}>{active ? '✅' : '❌'}</span>
-                </div>
-              );
-           })}
+          {['HSTS', 'CSP', 'X-Frame-Options', 'X-Content-Type'].map((h, i) => {
+            const key = h === 'X-Frame-Options' ? 'XFO' : (h === 'X-Content-Type' ? 'X-Content-Type' : h);
+            const active = audit.headers && audit.headers[key];
+            return (
+              <div key={i} className="glass-card" style={{ background: active ? 'rgba(0,255,136,0.05)' : 'rgba(255,80,80,0.05)', border: active ? '1px solid rgba(0,255,136,0.1)' : '1px solid rgba(255,80,80,0.1)', padding: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: active ? 'var(--e-green)' : 'var(--red)' }}>{h}</span>
+                <span style={{ fontSize: 14 }}>{active ? '✅' : '❌'}</span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -3802,7 +3819,7 @@ function ThreatIntelTab() {
     <div className="dash-grid">
       <div className="glass-card">
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 16 }}>🔍 CVE Intelligence Lookup</div>
-        
+
         <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
           <input className="input" placeholder="Search CVE-2024-XXXX or Keywords..." value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} style={{ flex: 1 }} />
           <button className="evolve-btn" onClick={handleSearch}>Scan DB</button>
@@ -3817,7 +3834,7 @@ function ThreatIntelTab() {
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
           {['SQLi', 'XSS', 'LFI', 'CMDi'].map((t) => <button key={t} className={`tab-btn ${type === t && !dynamicCve ? 'active' : ''}`} onClick={() => { setType(t); setDynamicCve(null); setSearch(''); setSearchError(''); }} style={{ padding: '6px 14px' }}>{t}</button>)}
         </div>
-        
+
         <div style={{ background: 'rgba(8,11,16,.5)', borderLeft: `3px solid ${sc}`, border: `1px solid ${sc}44`, borderRadius: 10, padding: '16px 18px', transition: 'all 0.3s ease' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: sc, fontFamily: 'Anton', letterSpacing: '0.02em' }}>{cve.cve_id}</div>
@@ -4076,7 +4093,7 @@ function AnalyticsTab({ stats }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {countries.map(([country, count], i) => {
                 const pct = Math.round((count / totalAttacks) * 100);
-                const colors = ['#ef4444','#f97316','#eab308','#22c55e','#38bdf8','#a855f7','#ec4899','#14b8a6'];
+                const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#38bdf8', '#a855f7', '#ec4899', '#14b8a6'];
                 return (
                   <div key={country}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -4139,7 +4156,7 @@ function ReportsTab({ stats, blocked }) {
         <h1 style={{ fontFamily: 'Anton', letterSpacing: '-0.02em', fontSize: '42px', margin: 0, textTransform: 'uppercase' }}>📄 Operations & Reports</h1>
         <p style={{ color: 'var(--e-muted)', fontFamily: 'monospace' }}>Generate SOC incident reports and test integrations</p>
       </div>
-      
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
         <div className="glass-card">
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 20, color: 'var(--e-muted)', letterSpacing: 1 }}>BASIC REPORTING</div>
@@ -4211,17 +4228,17 @@ function WebsiteSetup() {
         {/* Improved Stepper */}
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 50, position: 'relative' }}>
           <div style={{ position: 'absolute', top: 22, left: '10%', right: '10%', height: 2, background: 'rgba(255,255,255,0.05)', zIndex: 0 }} />
-          <div style={{ 
-            position: 'absolute', top: 22, left: '10%', 
-            width: step === 1 ? '0%' : step === 2 ? '40%' : '80%', 
-            height: 2, background: 'var(--e-green)', zIndex: 0, 
-            transition: '0.8s cubic-bezier(0.16, 1, 0.3, 1)' 
+          <div style={{
+            position: 'absolute', top: 22, left: '10%',
+            width: step === 1 ? '0%' : step === 2 ? '40%' : '80%',
+            height: 2, background: 'var(--e-green)', zIndex: 0,
+            transition: '0.8s cubic-bezier(0.16, 1, 0.3, 1)'
           }} />
-          
+
           {steps.map((s) => (
             <div key={s.n} style={{ zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-              <div style={{ 
-                width: 44, height: 44, borderRadius: '50%', 
+              <div style={{
+                width: 44, height: 44, borderRadius: '50%',
                 background: step > s.n ? 'var(--e-green)' : step === s.n ? '#111' : '#0a0a0a',
                 border: step >= s.n ? '2px solid var(--e-green)' : '2px solid rgba(255,255,255,0.05)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -4241,15 +4258,15 @@ function WebsiteSetup() {
             <div style={{ maxWidth: 500 }}>
               <h2 style={{ fontFamily: 'Anton', fontSize: 28, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>Identify Your Infrastructure</h2>
               <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 32, lineHeight: 1.6 }}>AutoShield requires a verified domain to anchor your dedicated edge partition. Enter your Fully Qualified Domain Name below.</p>
-              
+
               <div style={{ position: 'relative', marginBottom: 32 }}>
-                <input 
-                  type="text" 
-                  placeholder="e.g. portal.nexus-solutions.com" 
-                  value={domain} 
-                  onChange={(e) => setDomain(e.target.value)} 
-                  className="evolve-input" 
-                  style={{ width: '100%', height: 54, fontSize: 16, paddingLeft: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white' }} 
+                <input
+                  type="text"
+                  placeholder="e.g. portal.nexus-solutions.com"
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  className="evolve-input"
+                  style={{ width: '100%', height: 54, fontSize: 16, paddingLeft: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white' }}
                 />
                 <div style={{ position: 'absolute', right: 16, top: 18, color: domain.length > 3 ? 'var(--e-green)' : 'var(--muted2)' }}>
                   <HiOutlineGlobeAmericas size={18} />
@@ -4258,21 +4275,21 @@ function WebsiteSetup() {
 
               <div style={{ marginBottom: 24 }}>
                 <label style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, display: 'block' }}>UPSTREAM TARGET (WHERE TO PROXY TRAFFIC)</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. http://192.168.1.100:8080 or http://localhost:9090" 
-                  value={upstreamUrl} 
-                  onChange={(e) => setUpstreamUrl(e.target.value)} 
-                  className="evolve-input" 
-                  style={{ width: '100%', height: 48, fontSize: 14, paddingLeft: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white' }} 
+                <input
+                  type="text"
+                  placeholder="e.g. http://192.168.1.100:8080 or http://localhost:9090"
+                  value={upstreamUrl}
+                  onChange={(e) => setUpstreamUrl(e.target.value)}
+                  className="evolve-input"
+                  style={{ width: '100%', height: 48, fontSize: 14, paddingLeft: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, color: 'white' }}
                 />
                 <div style={{ fontSize: 11, color: 'var(--muted2)', marginTop: 6 }}>
                   Leave empty to auto-detect from domain. Format: http://IP:PORT
                 </div>
               </div>
 
-              <button 
-                className="evolve-button-primary" 
+              <button
+                className="evolve-button-primary"
                 style={{ width: '100%', height: 50, fontSize: 14, fontWeight: 700 }}
                 onClick={() => { if (domain.length > 3) setStep(2); }}
               >
@@ -4286,7 +4303,7 @@ function WebsiteSetup() {
           <MotionDiv initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
             <h2 style={{ fontFamily: 'Anton', fontSize: 28, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1 }}>Edge Synchronization</h2>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 32 }}>Update your authoritative DNS records to route traffic through our protected global proxy layer.</p>
-            
+
             <div className="glass-card" style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--line)', padding: 0, overflow: 'hidden', marginBottom: 32 }}>
               <div style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--line)', fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--muted)', display: 'flex', justifyContent: 'space-between' }}>
                 <span>DNS CONFIGURATION MATRIX</span>
@@ -4321,9 +4338,9 @@ function WebsiteSetup() {
         {step === 3 && (
           <MotionDiv initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ 
-                width: 100, height: 100, borderRadius: '50%', background: 'rgba(0,255,156,0.1)', 
-                border: '2px solid var(--e-green)', margin: '0 auto 24px', 
+              <div style={{
+                width: 100, height: 100, borderRadius: '50%', background: 'rgba(0,255,156,0.1)',
+                border: '2px solid var(--e-green)', margin: '0 auto 24px',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 boxShadow: '0 0 40px rgba(0,255,156,0.2)',
                 color: 'var(--e-green)'
@@ -4332,7 +4349,7 @@ function WebsiteSetup() {
               </div>
               <h2 style={{ fontFamily: 'Anton', fontSize: 32, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--e-green)' }}>Protection Activated</h2>
               <p style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 40, maxWidth: 500, margin: '0 auto 40px' }}>Your infrastructure is now anchored to the AutoShield Edge. All incoming requests are being scanned by our AI in real-time.</p>
-              
+
               <div className="glass-card" style={{ background: 'rgba(0,255,156,0.03)', border: '1px solid rgba(0,255,156,0.2)', padding: 20, textAlign: 'left', marginBottom: 32 }}>
                 <div style={{ fontSize: 10, color: 'var(--e-green)', fontFamily: 'var(--mono)', marginBottom: 8 }}>VIRTUAL PARTITION API KEY</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -4604,11 +4621,11 @@ function AttackGeo() {
     <MotionDiv initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
       {/* HEADER */}
       <div className="dash-header" style={{ marginBottom: '28px' }}>
-        <h1 style={{ fontFamily: 'Anton', letterSpacing: '-0.02em', fontSize: '36px', margin: 0, textTransform: 'uppercase' }}>🌍 Attack Geography</h1>
+        <h1 style={{ fontFamily: 'Anton, sans-serif', letterSpacing: '-0.02em', fontSize: '36px', margin: 0, textTransform: 'uppercase' }}>Africa Global Defense</h1>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
-          <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: 'var(--cyan)', padding: '2px 10px', background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.2)', borderRadius: 4, letterSpacing: 1 }}>ALL SITES AGGREGATED</span>
+          <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: '#00ff9c', padding: '2px 10px', background: 'rgba(0,255,156,0.05)', border: '1px solid rgba(0,255,156,0.2)', borderRadius: 4, letterSpacing: 1 }}>ACTIVE SOC MODE</span>
         </div>
-        <p style={{ color: 'var(--muted)', fontFamily: 'var(--mono)', marginTop: 4, fontSize: 12 }}>Real-time global threat intelligence & origin analysis</p>
+        <p style={{ color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--mono)', marginTop: 4, fontSize: 11, letterSpacing: '0.05em' }}>Real-time global threat intelligence & localized origin analysis</p>
       </div>
 
       <div className="geo-page">
@@ -4640,29 +4657,24 @@ function AttackGeo() {
         {/* ═══ PROTECTED NODE STATUS ═══ */}
         <div className="geo-status-card">
           <div className="geo-status-main">
-            <span className="geo-status-label">Active Protected Node</span>
+            <span className="geo-status-label">Live Protected Node</span>
             <div className="geo-status-value">
-              <span className="geo-status-dot" />
-              {targetSite.city.toUpperCase()} GATEWAY
+              DEHRADUN GATEWAY
             </div>
           </div>
 
-          <div className="geo-status-grid">
+          <div style={{ marginLeft: 40, display: 'flex', gap: 40 }}>
             <div className="geo-status-item">
-              <span className="geo-status-item-label">Node Host</span>
-              <span className="geo-status-item-value">autoshield.edge.04</span>
+              <span className="geo-status-item-label">Status</span>
+              <span className="geo-status-item-value" style={{ color: '#00ff9c' }}>● ACTIVE</span>
             </div>
             <div className="geo-status-item">
-              <span className="geo-status-item-label">IPv4 Address</span>
+              <span className="geo-status-item-label">Public IPv4</span>
               <span className="geo-status-item-value">45.2.19.254</span>
             </div>
             <div className="geo-status-item">
-              <span className="geo-status-item-label">Latitude</span>
-              <span className="geo-status-item-value">{targetSite.lat.toFixed(6)}</span>
-            </div>
-            <div className="geo-status-item">
-              <span className="geo-status-item-label">Longitude</span>
-              <span className="geo-status-item-value">{targetSite.lng.toFixed(6)}</span>
+              <span className="geo-status-item-label">Coordinates</span>
+              <span className="geo-status-item-value">{targetSite.lat.toFixed(4)}N, {targetSite.lng.toFixed(4)}E</span>
             </div>
           </div>
 
@@ -4680,10 +4692,10 @@ function AttackGeo() {
           </div>
 
           <div className="geo-map-frame">
-            <MapContainer 
-              center={[targetSite.lat, targetSite.lng]} 
-              zoom={2.5} 
-              minZoom={2} 
+            <MapContainer
+              center={[targetSite.lat, targetSite.lng]}
+              zoom={2.5}
+              minZoom={2}
               scrollWheelZoom
               className="geo-live-map"
               zoomControl={false}
@@ -4702,17 +4714,31 @@ function AttackGeo() {
                   [targetSite.lat, targetSite.lng]
                 );
                 return (
-                  <Polyline
-                    key={route.id}
-                    positions={curvePoints}
-                    pathOptions={{
-                      className: 'gl-geo-route',
-                      color: selectedColor,
-                      weight: 1.5,
-                      opacity: selectedLocationKey ? (selectedLocationKey === route.locationKey ? 0.85 : 0.08) : 0.45,
-                      dashArray: '3 8',
-                    }}
-                  />
+                  <React.Fragment key={route.id}>
+                    {/* Base dotted route */}
+                    <Polyline
+                      positions={curvePoints}
+                      pathOptions={{
+                        className: 'gl-geo-route',
+                        color: selectedColor,
+                        weight: 1.5,
+                        opacity: selectedLocationKey ? (selectedLocationKey === route.locationKey ? 0.85 : 0.08) : 0.45,
+                        dashArray: '3 8',
+                      }}
+                    />
+                    {/* Traveling energy comet */}
+                    {!selectedLocationKey || selectedLocationKey === route.locationKey ? (
+                      <Polyline
+                        positions={curvePoints}
+                        pathOptions={{
+                          className: 'geo-route-comet',
+                          color: selectedColor,
+                          weight: 3.5,
+                          opacity: 1,
+                        }}
+                      />
+                    ) : null}
+                  </React.Fragment>
                 );
               })}
 
@@ -4740,7 +4766,7 @@ function AttackGeo() {
                     <MapTooltip direction="top" offset={[0, -12]}>
                       <div style={{ color: '#fff', fontSize: 13, marginBottom: 4, fontWeight: 700 }}>{loc.city}, {loc.country}</div>
                       <div style={{ color: color, fontSize: 10, fontFamily: 'var(--mono)', marginBottom: 4 }}>LOC / {loc.lat.toFixed(2)}, {loc.lng.toFixed(2)}</div>
-                      <div style={{ color: 'var(--muted)', fontSize: 10 }}><span style={{color:'#fff'}}>{loc.count}</span> threats neutralized</div>
+                      <div style={{ color: 'var(--muted)', fontSize: 10 }}><span style={{ color: '#fff' }}>{loc.count}</span> threats neutralized</div>
                     </MapTooltip>
                   </Marker>
                 );
@@ -4752,6 +4778,8 @@ function AttackGeo() {
                 icon={L.divIcon({
                   className: 'custom-target-icon',
                   html: `<div class="target-marker-box">
+                           <div class="target-radar-ring"></div>
+                           <div class="target-radar-ring"></div>
                            <div class="target-radar-ring"></div>
                            <div class="target-radar-core"></div>
                          </div>`,
@@ -4770,7 +4798,7 @@ function AttackGeo() {
             <div className="geo-hud-overlay">
               <div className="geo-hud-grid" />
               <div className="geo-vignette" />
-              <div className="geo-scan-beam" />
+              <div className="geo-radar-sweep" />
             </div>
           </div>
 
@@ -4862,7 +4890,7 @@ function AttackGeo() {
 
           {filteredLog.slice(0, 10).map((ev) => (
             <div className="geo-feed-row" key={ev.id}>
-              <span className="geo-feed-time">{new Date().toISOString().split('T')[1].slice(0,8)}</span>
+              <span className="geo-feed-time">{new Date().toISOString().split('T')[1].slice(0, 8)}</span>
               <span className="geo-feed-type" style={{ color: TYPE_COLORS[ev.attack_type] }}>{ev.attack_type}</span>
               <span className="geo-feed-ip">{ev.src_ip}</span>
               <span className="geo-feed-loc">{ev.city || ev.country}</span>
@@ -4951,7 +4979,7 @@ function ThreatIntel() {
 
         {/* Right Column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          
+
           {/* Live Top Threats */}
           <div className="glass-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -5022,21 +5050,21 @@ function Profile() {
   return (
     <MotionDiv initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
       {/* Header with Glass Gradient */}
-      <div style={{ 
-        position: 'relative', 
-        padding: '60px 40px', 
-        borderRadius: '24px', 
+      <div style={{
+        position: 'relative',
+        padding: '60px 40px',
+        borderRadius: '24px',
         background: 'linear-gradient(135deg, rgba(56,189,248,0.05) 0%, rgba(106,92,255,0.05) 100%)',
         border: '1px solid rgba(255,255,255,0.03)',
         marginBottom: '40px',
         overflow: 'hidden'
       }}>
         <div style={{ position: 'absolute', top: '-100px', right: '-100px', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(0,200,255,0.1) 0%, transparent 70%)', filter: 'blur(40px)' }} />
-        
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '32px', position: 'relative', zIndex: 1 }}>
-          <div style={{ 
-            width: '100px', height: '100px', 
-            borderRadius: '50%', 
+          <div style={{
+            width: '100px', height: '100px',
+            borderRadius: '50%',
             background: 'linear-gradient(135deg, #1C2535 0%, #09090B 100%)',
             border: '2px solid rgba(255,255,255,0.05)',
             boxShadow: '0 0 40px rgba(0,0,0,0.5)',
@@ -5066,11 +5094,11 @@ function Profile() {
         {/* Profile Details */}
         <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '2px', color: 'var(--e-muted)', fontFamily: 'monospace' }}>IDENTITY CONFIGURATION</div>
-          
+
           <div style={{ display: 'grid', gap: '20px' }}>
             <div className="profile-field">
               <label style={{ fontSize: 10, color: 'var(--e-muted)', display: 'block', marginBottom: 8, fontFamily: 'monospace' }}>MASTER ID</label>
-              <div style={{ fontFamily: 'var(--mono)', color: 'white', fontSize: 13 }}>USR-{(user?.username || 'admin').split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0).toString(16).replace('-','').slice(0,6).toUpperCase()}</div>
+              <div style={{ fontFamily: 'var(--mono)', color: 'white', fontSize: 13 }}>USR-{(user?.username || 'admin').split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0).toString(16).replace('-', '').slice(0, 6).toUpperCase()}</div>
             </div>
             <div className="profile-field">
               <label style={{ fontSize: 10, color: 'var(--e-muted)', display: 'block', marginBottom: 8, fontFamily: 'monospace' }}>RECOVER EMAIL</label>
@@ -5080,7 +5108,7 @@ function Profile() {
               <label style={{ fontSize: 10, color: 'var(--e-muted)', display: 'block', marginBottom: 8, fontFamily: 'monospace' }}>AUTH METHOD</label>
               <div style={{ color: 'var(--cyan)', fontSize: 13, fontFamily: 'var(--mono)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 {user?.authMethod === 'google' ? (
-                  <><svg width="14" height="14" viewBox="0 0 24 24" style={{ verticalAlign: 'middle' }}><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg> Google OAuth 2.0</>
+                  <><svg width="14" height="14" viewBox="0 0 24 24" style={{ verticalAlign: 'middle' }}><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" /><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" /><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" /><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" /></svg> Google OAuth 2.0</>
                 ) : 'Enterprise SSO'}
               </div>
             </div>
@@ -5107,151 +5135,151 @@ function Profile() {
 
         {/* API & Controls */}
         <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '2px', color: 'var(--e-muted)', fontFamily: 'monospace' }}>API ACCESS INTERFACE</div>
-                <div className="neon-pill" style={{ fontSize: 10 }}>V2.0 STABLE</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '2px', color: 'var(--e-muted)', fontFamily: 'monospace' }}>API ACCESS INTERFACE</div>
+            <div className="neon-pill" style={{ fontSize: 10 }}>V2.0 STABLE</div>
+          </div>
+
+          <div style={{ padding: '24px', background: '#09090B', borderRadius: '12px', border: '1px solid rgba(0,255,156,0.1)', flex: 1 }}>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontSize: 10, color: 'var(--e-muted)', marginBottom: 8, fontFamily: 'monospace' }}>MASTER INGESTION KEY</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  flex: 1,
+                  padding: '12px 16px',
+                  background: 'rgba(0,0,0,0.5)',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  borderRadius: '8px',
+                  color: showKey ? 'var(--green)' : 'rgba(34,197,94,0.1)',
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  filter: showKey ? 'none' : 'blur(4px)',
+                  transition: 'all 0.3s'
+                }}>
+                  {masterKey}
+                </div>
+                <button className="evolve-button-secondary" style={{ fontSize: 11, padding: '8px 16px', borderRadius: 6 }} onClick={() => setShowKey(!showKey)}>
+                  {showKey ? 'HIDE' : 'REVEAL'}
+                </button>
+              </div>
             </div>
 
-            <div style={{ padding: '24px', background: '#09090B', borderRadius: '12px', border: '1px solid rgba(0,255,156,0.1)', flex: 1 }}>
-                <div style={{ marginBottom: 24 }}>
-                    <div style={{ fontSize: 10, color: 'var(--e-muted)', marginBottom: 8, fontFamily: 'monospace' }}>MASTER INGESTION KEY</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ 
-                            flex: 1, 
-                            padding: '12px 16px', 
-                            background: 'rgba(0,0,0,0.5)', 
-                            border: '1px solid rgba(255,255,255,0.05)', 
-                            borderRadius: '8px', 
-                            color: showKey ? 'var(--green)' : 'rgba(34,197,94,0.1)', 
-                            fontFamily: 'monospace',
-                            fontSize: 13,
-                            filter: showKey ? 'none' : 'blur(4px)',
-                            transition: 'all 0.3s'
-                        }}>
-                            {masterKey}
-                        </div>
-                        <button className="evolve-button-secondary" style={{ fontSize: 11, padding: '8px 16px', borderRadius: 6 }} onClick={() => setShowKey(!showKey)}>
-                            {showKey ? 'HIDE' : 'REVEAL'}
-                        </button>
-                    </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                    <div style={{ padding: '16px', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)' }}>
-                        <div style={{ fontSize: 10, color: 'var(--e-muted)', marginBottom: 8, fontFamily: 'monospace' }}>IP WHITELIST</div>
-                        <div style={{ fontSize: 12, color: 'white' }}>1 Node Active</div>
-                    </div>
-                    <div style={{ padding: '16px', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)' }}>
-                        <div style={{ fontSize: 10, color: 'var(--e-muted)', marginBottom: 8, fontFamily: 'monospace' }}>USAGE QUOTA</div>
-                        <div style={{ fontSize: 12, color: 'white' }}>Unlimited</div>
-                    </div>
-                </div>
-
-                <div style={{ marginTop: '24px' }}>
-                    <button className="evolve-button-primary" style={{ width: '100%', height: '44px', borderRadius: '8px' }} onClick={() => {
-                      navigator.clipboard?.writeText(masterKey);
-                      alert('Active ingestion key copied to clipboard. Rotate keys from backend key management before production use.');
-                    }}>
-                        COPY ACTIVE KEY <HiOutlineKey style={{ marginLeft: 8 }} />
-                    </button>
-                    <p style={{ marginTop: '12px', fontSize: '11px', color: 'var(--e-muted)', textAlign: 'center' }}>
-                        Key rotations are logged and broadcasted to edge nodes.
-                    </p>
-                </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div style={{ padding: '16px', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                <div style={{ fontSize: 10, color: 'var(--e-muted)', marginBottom: 8, fontFamily: 'monospace' }}>IP WHITELIST</div>
+                <div style={{ fontSize: 12, color: 'white' }}>1 Node Active</div>
+              </div>
+              <div style={{ padding: '16px', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.1)' }}>
+                <div style={{ fontSize: 10, color: 'var(--e-muted)', marginBottom: 8, fontFamily: 'monospace' }}>USAGE QUOTA</div>
+                <div style={{ fontSize: 12, color: 'white' }}>Unlimited</div>
+              </div>
             </div>
+
+            <div style={{ marginTop: '24px' }}>
+              <button className="evolve-button-primary" style={{ width: '100%', height: '44px', borderRadius: '8px' }} onClick={() => {
+                navigator.clipboard?.writeText(masterKey);
+                alert('Active ingestion key copied to clipboard. Rotate keys from backend key management before production use.');
+              }}>
+                COPY ACTIVE KEY <HiOutlineKey style={{ marginLeft: 8 }} />
+              </button>
+              <p style={{ marginTop: '12px', fontSize: '11px', color: 'var(--e-muted)', textAlign: 'center' }}>
+                Key rotations are logged and broadcasted to edge nodes.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '24px' }}>
-         {/* Security Log */}
-         <div className="glass-card">
-            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '2px', color: 'var(--e-muted)', fontFamily: 'monospace', marginBottom: 20 }}>RECENT ADMINISTRATIVE ACTIVITY</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', overflow: 'hidden' }}>
-                {activities.map((act, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', background: 'var(--surface)', gap: '20px' }}>
-                        <div style={{ fontSize: 11, color: 'var(--e-muted)', width: '80px', fontFamily: 'monospace' }}>{act.time}</div>
-                        <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{act.action}</div>
-                        <div style={{ 
-                            fontSize: 10, 
-                            fontWeight: 700, 
-                            color: act.status === 'SUCCESS' ? 'var(--green)' : 'var(--red)',
-                            padding: '2px 8px',
-                            background: act.status === 'SUCCESS' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
-                            borderRadius: '4px'
-                        }}>{act.status}</div>
-                    </div>
-                ))}
-            </div>
-         </div>
-
-         {/* Account Security */}
-         <div className="glass-card">
-            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '2px', color: 'var(--e-muted)', fontFamily: 'monospace', marginBottom: 20 }}>ACCOUNT HARDENING</div>
-            <div style={{ display: 'grid', gap: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <HiOutlineLockClosed style={{ color: 'var(--green)', fontSize: 18 }} />
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>2FA Verification</div>
-                    </div>
-                    <span style={{ color: 'var(--green)', fontSize: 11, fontWeight: 700 }}>ACTIVE</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <HiOutlineFingerPrint style={{ color: 'var(--cyan)', fontSize: 18 }} />
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>Biometric Entry</div>
-                    </div>
-                    <button className="evolve-button-secondary" style={{ padding: '4px 10px', fontSize: 11, borderRadius: 6 }} onClick={() => setBiometricEnabled(!biometricEnabled)}>
-                      {biometricEnabled ? 'ENABLED' : 'UNSET'}
-                    </button>
-                </div>
-                <button className="evolve-button-secondary" style={{ width: '100%', height: '40px', fontSize: 12, borderRadius: 8 }} onClick={() => setRecoveryCodes(Array.from({ length: 6 }, () => Math.random().toString(36).slice(2, 8).toUpperCase()))}>
-                    VIEW RECOVERY CODES
-                </button>
-                {recoveryCodes.length > 0 && (
-                  <div style={{ fontSize: 11, color: 'var(--e-muted)', fontFamily: 'var(--mono)', display: 'grid', gap: 4 }}>
-                    {recoveryCodes.map((code) => <div key={code}>{code}</div>)}
-                  </div>
-                )}
-            </div>
-         </div>
-
-         {/* Webhook SIEM Integration */}
-         <div className="glass-card">
-            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '2px', color: 'var(--e-muted)', fontFamily: 'monospace', marginBottom: 20 }}>SIEM WEBHOOK ROUTING</div>
-            <p style={{ fontSize: 11, color: 'var(--e-muted)', marginBottom: 20, lineHeight: 1.5 }}>
-              Push live security events directly to your Splunk, Datadog, or Elasticsearch instances.
-            </p>
-            <div style={{ display: 'grid', gap: '16px' }}>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--cyan)', display: 'block', marginBottom: 8, fontFamily: 'monospace' }}>TARGET MUTATION URL</label>
-                <input id="webhook-url" className="input" placeholder="https://api.datadoghq.com/api/v1/events" style={{ width: '100%' }} />
+        {/* Security Log */}
+        <div className="glass-card">
+          <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '2px', color: 'var(--e-muted)', fontFamily: 'monospace', marginBottom: 20 }}>RECENT ADMINISTRATIVE ACTIVITY</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', overflow: 'hidden' }}>
+            {activities.map((act, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', background: 'var(--surface)', gap: '20px' }}>
+                <div style={{ fontSize: 11, color: 'var(--e-muted)', width: '80px', fontFamily: 'monospace' }}>{act.time}</div>
+                <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{act.action}</div>
+                <div style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: act.status === 'SUCCESS' ? 'var(--green)' : 'var(--red)',
+                  padding: '2px 8px',
+                  background: act.status === 'SUCCESS' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                  borderRadius: '4px'
+                }}>{act.status}</div>
               </div>
-              <div>
-                <label style={{ fontSize: 10, color: 'var(--cyan)', display: 'block', marginBottom: 8, fontFamily: 'monospace' }}>AUTHENTICATION BEARER</label>
-                <input id="webhook-auth" className="input" type="password" placeholder="xoxb-..." style={{ width: '100%' }} />
+            ))}
+          </div>
+        </div>
+
+        {/* Account Security */}
+        <div className="glass-card">
+          <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '2px', color: 'var(--e-muted)', fontFamily: 'monospace', marginBottom: 20 }}>ACCOUNT HARDENING</div>
+          <div style={{ display: 'grid', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <HiOutlineLockClosed style={{ color: 'var(--green)', fontSize: 18 }} />
+                <div style={{ fontSize: 12, fontWeight: 600 }}>2FA Verification</div>
               </div>
-              <button className="evolve-btn" style={{ width: '100%' }} onClick={async () => {
-                const url = document.getElementById('webhook-url')?.value;
-                const auth = document.getElementById('webhook-auth')?.value;
-                if (!url) { alert('Target URL is required'); return; }
-                
-                const siteId = user?.site_id || 'site_demo';
-                const res = await engine.registerWebhook(siteId, { 
-                  url, 
-                  name: url.includes('datadog') ? 'Datadog SIEM' : url.includes('splunk') ? 'Splunk SOC' : 'External SIEM',
-                  auth
-                });
-                
-                if (res.success) {
-                  alert('Webhook securely registered. Sending heartbeat ping.');
-                  const u = document.getElementById('webhook-url'); if(u) u.value = '';
-                  const a = document.getElementById('webhook-auth'); if(a) a.value = '';
-                } else {
-                  alert(res.error || 'Enterprise Subscription required.');
-                }
-              }}>REGISTER LIVE WEBHOOK</button>
+              <span style={{ color: 'var(--green)', fontSize: 11, fontWeight: 700 }}>ACTIVE</span>
             </div>
-         </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <HiOutlineFingerPrint style={{ color: 'var(--cyan)', fontSize: 18 }} />
+                <div style={{ fontSize: 12, fontWeight: 600 }}>Biometric Entry</div>
+              </div>
+              <button className="evolve-button-secondary" style={{ padding: '4px 10px', fontSize: 11, borderRadius: 6 }} onClick={() => setBiometricEnabled(!biometricEnabled)}>
+                {biometricEnabled ? 'ENABLED' : 'UNSET'}
+              </button>
+            </div>
+            <button className="evolve-button-secondary" style={{ width: '100%', height: '40px', fontSize: 12, borderRadius: 8 }} onClick={() => setRecoveryCodes(Array.from({ length: 6 }, () => Math.random().toString(36).slice(2, 8).toUpperCase()))}>
+              VIEW RECOVERY CODES
+            </button>
+            {recoveryCodes.length > 0 && (
+              <div style={{ fontSize: 11, color: 'var(--e-muted)', fontFamily: 'var(--mono)', display: 'grid', gap: 4 }}>
+                {recoveryCodes.map((code) => <div key={code}>{code}</div>)}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Webhook SIEM Integration */}
+        <div className="glass-card">
+          <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '2px', color: 'var(--e-muted)', fontFamily: 'monospace', marginBottom: 20 }}>SIEM WEBHOOK ROUTING</div>
+          <p style={{ fontSize: 11, color: 'var(--e-muted)', marginBottom: 20, lineHeight: 1.5 }}>
+            Push live security events directly to your Splunk, Datadog, or Elasticsearch instances.
+          </p>
+          <div style={{ display: 'grid', gap: '16px' }}>
+            <div>
+              <label style={{ fontSize: 10, color: 'var(--cyan)', display: 'block', marginBottom: 8, fontFamily: 'monospace' }}>TARGET MUTATION URL</label>
+              <input id="webhook-url" className="input" placeholder="https://api.datadoghq.com/api/v1/events" style={{ width: '100%' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 10, color: 'var(--cyan)', display: 'block', marginBottom: 8, fontFamily: 'monospace' }}>AUTHENTICATION BEARER</label>
+              <input id="webhook-auth" className="input" type="password" placeholder="xoxb-..." style={{ width: '100%' }} />
+            </div>
+            <button className="evolve-btn" style={{ width: '100%' }} onClick={async () => {
+              const url = document.getElementById('webhook-url')?.value;
+              const auth = document.getElementById('webhook-auth')?.value;
+              if (!url) { alert('Target URL is required'); return; }
+
+              const siteId = user?.site_id || 'site_demo';
+              const res = await engine.registerWebhook(siteId, {
+                url,
+                name: url.includes('datadog') ? 'Datadog SIEM' : url.includes('splunk') ? 'Splunk SOC' : 'External SIEM',
+                auth
+              });
+
+              if (res.success) {
+                alert('Webhook securely registered. Sending heartbeat ping.');
+                const u = document.getElementById('webhook-url'); if (u) u.value = '';
+                const a = document.getElementById('webhook-auth'); if (a) a.value = '';
+              } else {
+                alert(res.error || 'Enterprise Subscription required.');
+              }
+            }}>REGISTER LIVE WEBHOOK</button>
+          </div>
+        </div>
       </div>
     </MotionDiv>
   );
@@ -5262,26 +5290,38 @@ function MyWebsites() {
   useEngineSnapshot(() => engine.getStateVersion());
   const sites = engine.getDomains();
   const [confirmRemove, setConfirmRemove] = useState(null);
+  const [wafTestResults, setWafTestResults] = useState({}); // { siteId: result }
+  const [wafTesting, setWafTesting] = useState({});  // { siteId: bool }
 
   useEffect(() => {
     let cancelled = false;
-
     const refreshAllHealth = async () => {
       const probes = sites.map((site) => engine.refreshSiteHealth(site.id, site.domain));
       await Promise.allSettled(probes);
     };
-
     refreshAllHealth();
-
     const intervalId = setInterval(() => {
       if (!cancelled) refreshAllHealth();
-    }, 5000);
+    }, 8000);
+    return () => { cancelled = true; clearInterval(intervalId); };
+  }, [sites.length]);
 
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
-  }, [sites]);
+  const handleTestWAF = async (site) => {
+    setWafTesting(prev => ({ ...prev, [site.id]: true }));
+    try {
+      const res = await fetch(`${API_URL}/api/websites/${site.id}/test-attack`, {
+        method: 'POST',
+        headers: { 'X-AutoShield-Key': engine.getSessionKey(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attack_type: 'SQLi' }),
+      });
+      const data = await res.json();
+      setWafTestResults(prev => ({ ...prev, [site.id]: data }));
+    } catch (e) {
+      setWafTestResults(prev => ({ ...prev, [site.id]: { error: 'Test failed: ' + e.message } }));
+    } finally {
+      setWafTesting(prev => ({ ...prev, [site.id]: false }));
+    }
+  };
 
   const handleRemove = (index) => {
     engine.removeDomain(index);
@@ -5291,8 +5331,18 @@ function MyWebsites() {
   return (
     <MotionDiv initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
       <div className="dash-header" style={{ marginBottom: '40px' }}>
-        <h1 style={{ fontFamily: 'Anton', letterSpacing: '-0.02em', fontSize: '42px', margin: 0, textTransform: 'uppercase' }}>My Websites</h1>
-        <p style={{ color: 'var(--e-muted)', fontFamily: 'monospace' }}>All domains under AutoShield protection</p>
+        <div>
+          <h1 style={{ fontFamily: 'Anton', letterSpacing: '-0.02em', fontSize: '42px', margin: 0, textTransform: 'uppercase' }}>My Websites</h1>
+          <p style={{ color: 'var(--e-muted)', fontFamily: 'monospace' }}>All domains under AutoShield WAF protection</p>
+        </div>
+        <Link to="/setup" className="evolve-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 24px', fontSize: 13 }}>+ Add Website</Link>
+      </div>
+
+      {/* Protection model explainer */}
+      <div style={{ marginBottom: 24, padding: '14px 20px', background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.15)', borderRadius: 10, fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.7 }}>
+        <strong style={{ color: 'var(--cyan)' }}>🛡️ How AutoShield Protection Works</strong><br />
+        Traffic hits <code style={{ color: 'var(--green)' }}>{API_URL}/proxy</code> → WAF inspects → if clean, forwards to your <strong>Upstream URL</strong>.
+        Set the upstream URL in setup, or click <strong>Manage</strong> to configure it. Use <strong>Test WAF</strong> to verify real-time blocking is active.
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -5300,19 +5350,13 @@ function MyWebsites() {
           const siteUrl = formatSiteUrl(site.domain);
           const health = engine.getSiteHealth(site.id, site.domain);
           const statusLabel = health.status || 'UNKNOWN';
-          const statusColor = statusLabel === 'UP' ? 'var(--green)' : statusLabel === 'DEGRADED' ? 'var(--yellow)' : statusLabel === 'DOWN' ? 'var(--red)' : 'var(--e-muted)';
-          const siteDisplay = { 
-            id: site.id || `local_${i}`, 
-            name: site.domain, 
-            url: siteUrl,
-            status: statusLabel,
-            key: site.key || 'NO_ACTIVE_KEY', 
-            plan: site.plan || (engine.isPremium() ? 'Premium' : 'Free'), 
-            region: site.region || 'Auto-Provisioned', 
-            created: site.created ? site.created.slice(0, 10) : new Date().toISOString().slice(0, 10) 
-          };
+          const isNotConfigured = statusLabel === 'NOT_CONFIGURED';
+          const statusColor = statusLabel === 'UP' ? 'var(--green)' : statusLabel === 'DEGRADED' ? 'var(--yellow)' : isNotConfigured ? 'var(--e-muted)' : statusLabel === 'DOWN' ? 'var(--red)' : 'var(--e-muted)';
+          const wafResult = wafTestResults[site.id];
+          const testing = wafTesting[site.id];
+
           return (
-            <div key={i} className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: '20px', position: 'relative' }}>
+            <div key={i} className="glass-card" style={{ position: 'relative', padding: '20px 24px' }}>
               {confirmRemove === i && (
                 <div style={{ position: 'absolute', inset: 0, background: 'rgba(8,11,16,0.95)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 5 }}>
                   <span style={{ fontSize: 13, color: 'var(--text)' }}>Remove <strong>{site.domain}</strong>?</span>
@@ -5320,30 +5364,77 @@ function MyWebsites() {
                   <button onClick={() => setConfirmRemove(null)} style={{ padding: '6px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
                 </div>
               )}
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: statusColor, boxShadow: `0 0 10px ${statusColor}`, flexShrink: 0 }}></div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>{siteDisplay.name}</div>
-                <div style={{ color: 'var(--cyan)', fontFamily: 'monospace', fontSize: 13, marginTop: 4 }}>{siteDisplay.url}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ color: statusColor, fontWeight: 700, fontSize: 12 }}>{siteDisplay.status}</div>
-                <div style={{ color: 'var(--e-muted)', fontSize: 11, marginTop: 4, fontFamily: 'monospace' }}>
-                  HTTP: {health.status_code || 'n/a'} · {health.latency_ms ? `${health.latency_ms}ms` : 'latency n/a'}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                {/* Status dot */}
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: statusColor, boxShadow: isNotConfigured ? 'none' : `0 0 10px ${statusColor}`, flexShrink: 0 }} />
+
+                {/* Main info */}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{site.domain}</div>
+                  <div style={{ color: 'var(--cyan)', fontFamily: 'monospace', fontSize: 12, marginTop: 4 }}>{siteUrl}</div>
+                  {site.upstream_url && (
+                    <div style={{ color: 'var(--e-muted)', fontFamily: 'monospace', fontSize: 10, marginTop: 4 }}>↳ upstream: {site.upstream_url}</div>
+                  )}
+                </div>
+
+                {/* Health status */}
+                <div style={{ textAlign: 'right', minWidth: 120 }}>
+                  {isNotConfigured ? (
+                    <div style={{ fontSize: 11, color: 'var(--e-muted)', background: 'rgba(255,255,255,0.05)', border: '1px dashed rgba(255,255,255,0.1)', borderRadius: 4, padding: '4px 10px' }}>⚙️ SETUP NEEDED</div>
+                  ) : (
+                    <div style={{ color: statusColor, fontWeight: 700, fontSize: 12 }}>{statusLabel}</div>
+                  )}
+                  <div style={{ color: 'var(--e-muted)', fontSize: 11, marginTop: 4, fontFamily: 'monospace' }}>
+                    {isNotConfigured ? 'Add upstream URL to enable health check' : `HTTP: ${health.status_code || 'n/a'} · ${health.latency_ms ? `${health.latency_ms}ms` : 'latency n/a'}`}
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                  <button
+                    onClick={() => handleTestWAF(site)}
+                    disabled={testing}
+                    style={{ padding: '8px 14px', background: testing ? 'rgba(0,255,156,0.05)' : 'rgba(0,255,156,0.08)', border: '1px solid rgba(0,255,156,0.25)', borderRadius: 6, color: 'var(--green)', fontSize: 11, cursor: 'pointer', fontWeight: 700, whiteSpace: 'nowrap' }}
+                  >
+                    {testing ? '⏳ Testing...' : '🔬 Test WAF'}
+                  </button>
+                  <button onClick={() => navigate(`/my-websites/manage/${i}`)} style={{ padding: '8px 16px', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.25)', borderRadius: 6, color: 'var(--cyan)', fontSize: 12, cursor: 'pointer' }}>Manage →</button>
+                  <button onClick={() => setConfirmRemove(i)} style={{ padding: '8px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, color: '#ff6b6b', fontSize: 12, cursor: 'pointer' }}>✕</button>
                 </div>
               </div>
-              <button onClick={() => navigate(`/my-websites/manage/${i}`)} style={{ padding: '8px 16px', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.25)', borderRadius: 6, color: 'var(--cyan)', fontSize: 12, cursor: 'pointer' }}>Manage →</button>
-              <button onClick={() => setConfirmRemove(i)} style={{ padding: '8px 16px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, color: '#ff6b6b', fontSize: 12, cursor: 'pointer' }}>Remove</button>
+
+              {/* WAF test result */}
+              {wafResult && (
+                <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 8, background: wafResult.error ? 'rgba(239,68,68,0.06)' : wafResult.would_block ? 'rgba(0,255,156,0.06)' : 'rgba(234,179,8,0.06)', border: `1px solid ${wafResult.error ? 'rgba(239,68,68,0.2)' : wafResult.would_block ? 'rgba(0,255,156,0.2)' : 'rgba(234,179,8,0.2)'}`, fontSize: 12, fontFamily: 'monospace', color: wafResult.error ? 'var(--red)' : wafResult.would_block ? 'var(--green)' : 'var(--yellow)' }}>
+                  {wafResult.error || wafResult.message}
+                  {wafResult.attack_type && !wafResult.error && (
+                    <span style={{ marginLeft: 12, color: 'var(--e-muted)', fontSize: 10 }}>Attack: {wafResult.attack_type} | Severity: {wafResult.severity} | Confidence: {wafResult.confidence}%</span>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
 
-        <Link to="/setup" className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer', border: '1px dashed rgba(255,255,255,0.1)', textDecoration: 'none', color: 'inherit' }}>
-          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>+</div>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>Add Another Website</div>
-            <div style={{ color: 'var(--e-muted)', fontSize: 12, marginTop: 2 }}>Connect a new domain to AutoShield protection</div>
+        {sites.length === 0 && (
+          <div className="glass-card" style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>🌐</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>No websites yet</div>
+            <p style={{ color: 'var(--e-muted)', marginBottom: 24, fontSize: 13 }}>Add your first website to start protecting it with AutoShield's WAF.</p>
+            <Link to="/setup" className="evolve-btn">+ Add Your First Website</Link>
           </div>
-        </Link>
+        )}
+
+        {sites.length > 0 && (
+          <Link to="/setup" className="glass-card" style={{ display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer', border: '1px dashed rgba(255,255,255,0.1)', textDecoration: 'none', color: 'inherit' }}>
+            <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>+</div>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>Add Another Website</div>
+              <div style={{ color: 'var(--e-muted)', fontSize: 12, marginTop: 2 }}>Connect a new domain to AutoShield protection</div>
+            </div>
+          </Link>
+        )}
       </div>
     </MotionDiv>
   );
@@ -5353,42 +5444,43 @@ function ManageSite() {
   const { id } = useParams();
   const navigate = useNavigate();
   useEngineSnapshot(() => engine.getStateVersion());
-  
+
   const siteIndex = Number(id);
   const domains = engine.getDomains();
   const domainEntry = domains[siteIndex];
   const [copied, setCopied] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [ddosShield, setDdosShield] = useState(false);
+  const [siteStats, setSiteStats] = useState(engine.getStats());  // per-site stats
   const site = {
-    id: siteIndex,
+    id: domainEntry?.id || siteIndex,
     name: domainEntry?.domain || 'Unknown',
     url: formatSiteUrl(domainEntry?.domain),
     status: 'AGENT STREAMING',
-    key: domainEntry?.key || `as_${(domainEntry?.domain || '').replace(/[^a-z0-9]/gi,'').slice(0,8)}_key`,
+    key: domainEntry?.key || `as_${(domainEntry?.domain || '').replace(/[^a-z0-9]/gi, '').slice(0, 8)}_key`,
     plan: domainEntry?.plan || (engine.isPremium() ? 'Premium' : 'Free'),
     region: domainEntry?.region || 'Cloud Edge',
-    created: domainEntry?.created ? domainEntry.created.slice(0, 10) : new Date().toISOString().slice(0,10),
+    created: domainEntry?.created ? domainEntry.created.slice(0, 10) : new Date().toISOString().slice(0, 10),
   };
-  const stats = engine.getStats();
+  const stats = siteStats;  // scoped to this site
   const connection = engine.getConnection();
-  const log = engine.getRecentLog(200);
+  const log = engine.getRecentLog(200).filter(e => !e.site_id || e.site_id === domainEntry?.id);
   const blockedIPs = engine.getBlockedIPs();
   const [loading, setLoading] = useState(false);
   const health = engine.getSiteHealth(domainEntry?.id, domainEntry?.domain);
 
   useEffect(() => {
     if (domainEntry?.id) {
-       setLoading(true);
-       Promise.allSettled([
-         engine.fetchState(domainEntry.id),
-         engine.refreshSiteHealth(domainEntry.id, domainEntry.domain),
-       ]).finally(() => setLoading(false));
-       const intv = setInterval(() => {
-         engine.fetchState(domainEntry.id);
-         engine.refreshSiteHealth(domainEntry.id, domainEntry.domain);
-       }, 5000);
-       return () => clearInterval(intv);
+      setLoading(true);
+      Promise.allSettled([
+        engine.fetchState(domainEntry.id).then(s => { if (s) setSiteStats(s); }),
+        engine.refreshSiteHealth(domainEntry.id, domainEntry.domain),
+      ]).finally(() => setLoading(false));
+      const intv = setInterval(() => {
+        engine.fetchState(domainEntry.id).then(s => { if (s) setSiteStats(s); });
+        engine.refreshSiteHealth(domainEntry.id, domainEntry.domain);
+      }, 5000);
+      return () => clearInterval(intv);
     }
   }, [domainEntry?.id]);
 
@@ -5427,11 +5519,11 @@ function ManageSite() {
           {loading
             ? <span style={{ color: 'var(--e-muted)', fontSize: 12 }}>Connecting…</span>
             : <span style={{ padding: '4px 12px', background: 'rgba(0,255,156,0.1)', border: '1px solid rgba(0,255,156,0.25)', borderRadius: 4, color: healthColor, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: healthColor, display: 'inline-block', animation: 'pulse-dot 1.5s ease infinite' }} />
-                SITE {health.status || 'UNKNOWN'}
-              </span>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: healthColor, display: 'inline-block', animation: 'pulse-dot 1.5s ease infinite' }} />
+              SITE {health.status || 'UNKNOWN'}
+            </span>
           }
-          <button 
+          <button
             onClick={() => engine.downloadReport(domainEntry?.id)}
             style={{ padding: '6px 14px', background: 'var(--green)', border: 'none', borderRadius: 6, color: '#000', fontSize: 11, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
           >
@@ -5452,8 +5544,8 @@ function ManageSite() {
           { label: 'Threats Blocked', value: stats.blocked || 0, color: 'var(--green)', sub: `${blockRate}% block rate` },
           { label: 'Unique IPs', value: uniqueIPs, color: 'var(--cyan)', sub: 'distinct visitors' },
           { label: 'Blocked IPs', value: blocked.length, color: 'var(--red)', sub: 'in firewall' },
-            { label: 'Threat Score', value: engine.getThreatScore(), color: engine.getThreatScore() >= 70 ? 'var(--red)' : engine.getThreatScore() >= 40 ? 'var(--yellow)' : 'var(--green)', sub: engine.getThreatScore() >= 70 ? 'CRITICAL' : 'CLEAR' },
-          ].map((m, i) => (
+          { label: 'Threat Score', value: engine.getThreatScore(), color: engine.getThreatScore() >= 70 ? 'var(--red)' : engine.getThreatScore() >= 40 ? 'var(--yellow)' : 'var(--green)', sub: engine.getThreatScore() >= 70 ? 'CRITICAL' : 'CLEAR' },
+        ].map((m, i) => (
           <div key={i} className="glass-card" style={{ padding: '18px 20px' }}>
             <div style={{ fontSize: 10, color: 'var(--e-muted)', fontFamily: 'monospace', marginBottom: 8, letterSpacing: 1 }}>{m.label.toUpperCase()}</div>
             <div style={{ fontSize: 30, fontWeight: 800, color: m.color, lineHeight: 1 }}>{m.value}</div>
@@ -5519,7 +5611,7 @@ function ManageSite() {
         {/* Site Configuration */}
         <div className="glass-card">
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 16, color: 'var(--e-muted)', letterSpacing: 1 }}>WAF POLICY & EXTREME MEASURES</div>
-          
+
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', fontSize: 11, color: 'var(--e-muted)', marginBottom: 6 }}>RATE LIMIT WINDOW (SECONDS)</label>
             <input className="input" type="number" defaultValue={60} style={{ width: '100%' }} />
@@ -5532,22 +5624,22 @@ function ManageSite() {
 
           <div style={{ marginBottom: 24 }}>
             <label style={{ display: 'block', fontSize: 11, color: 'var(--e-muted)', marginBottom: 6 }}>GEOGRAPHIC IP BLOCKING (RESTRICT COUNTRIES)</label>
-            <input 
-              className="input" 
-              type="text" 
-              placeholder="e.g. RU, CN, IR" 
+            <input
+              className="input"
+              type="text"
+              placeholder="e.g. RU, CN, IR"
               defaultValue={domainEntry?.config?.blocked_countries?.join(', ') || ''}
-              style={{ width: '100%' }} 
+              style={{ width: '100%' }}
               onBlur={(e) => {
                 const val = e.target.value.trim();
-                if(val && !engine.isPremium()) {
-                   alert("Geofencing is an Enterprise Premium feature.");
-                   e.target.value = "";
-                   return;
+                if (val && !engine.isPremium()) {
+                  alert("Geofencing is an Enterprise Premium feature.");
+                  e.target.value = "";
+                  return;
                 }
                 const countries = val ? val.split(',').map(c => c.trim().toUpperCase()) : [];
                 engine.updateSiteConfig(domainEntry.id, { ...domainEntry.config, blocked_countries: countries });
-              }} 
+              }}
             />
           </div>
 
@@ -5556,8 +5648,8 @@ function ManageSite() {
               <div style={{ fontSize: 14, fontWeight: 700, color: ddosShield ? 'var(--red)' : 'white' }}>DDoS Shield Protocol</div>
               <div style={{ fontSize: 11, color: 'var(--e-muted)', marginTop: 4 }}>Premium only. Lowers connection threshold severely.</div>
             </div>
-            <button 
-              className={ddosShield ? "evolve-btn ddos-active" : "tab-btn"} 
+            <button
+              className={ddosShield ? "evolve-btn ddos-active" : "tab-btn"}
               style={{ background: ddosShield ? 'var(--red)' : '', borderColor: ddosShield ? 'var(--red)' : '', padding: '10px 16px' }}
               onClick={() => {
                 if (engine.isPremium()) {
@@ -5577,9 +5669,9 @@ function ManageSite() {
         {/* Attack Type Breakdown */}
         <div className="glass-card">
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 16, color: 'var(--e-muted)', letterSpacing: 1 }}>ATTACK TYPE DISTRIBUTION</div>
-          
+
           {Object.keys(byType).length === 0 ? (
-            <div style={{ color: 'var(--e-muted)', textAlign: 'center', padding: '40px 0', fontSize: 13 }}>No attacks recorded yet.<br/>Send a test SQLi to see telemetry!</div>
+            <div style={{ color: 'var(--e-muted)', textAlign: 'center', padding: '40px 0', fontSize: 13 }}>No attacks recorded yet.<br />Send a test SQLi to see telemetry!</div>
           ) : (
             Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([type, count]) => {
               const pct = Math.round((count / Math.max(totalRequests, 1)) * 100);
@@ -6006,7 +6098,7 @@ function DDoSShieldTab() {
       } else {
         await engine.engageDDoSShield();
       }
-    } catch (_) {}
+    } catch (_) { }
     setEngaging(false);
   };
 
@@ -6014,13 +6106,13 @@ function DDoSShieldTab() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
-    const handleDDoSTest = async () => {
-      if (!isPremium) {
-        setTestResult({ status: 'denied', message: 'DDoS testing requires Premium tier.' });
-        return;
-      }
-      setTesting(true);
-      setTestResult(null);
+  const handleDDoSTest = async () => {
+    if (!isPremium) {
+      setTestResult({ status: 'denied', message: 'DDoS testing requires Premium tier.' });
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
     try {
       const token = localStorage.getItem('as_token');
       const res = await fetch(`${API_BASE}/ddos/test`, {
@@ -6062,7 +6154,7 @@ function DDoSShieldTab() {
         setNewRule({ name: '', attack_type: 'SQLi', pattern: '', severity: 'HIGH' });
         setShowAddRule(false);
       }
-    } catch (_) {} finally { setAddingRule(false); }
+    } catch (_) { } finally { setAddingRule(false); }
   };
 
   const shieldEngaged = ddos.active || backendStatus?.engaged;
@@ -6365,8 +6457,8 @@ function PricingPage() {
             engine.setUserTier('free');
             engine.fetchState();
           } else {
-             const err = await res.json().catch(() => ({}));
-             engine.addNotification('system', 'Downgrade Failed', err.detail || 'Server error', 'high');
+            const err = await res.json().catch(() => ({}));
+            engine.addNotification('system', 'Downgrade Failed', err.detail || 'Server error', 'high');
           }
         } catch (_) {
           engine.addNotification('system', 'Connection Error', 'Backend unreachable.', 'high');
@@ -6506,7 +6598,7 @@ function CheckoutPage() {
     e.preventDefault();
     if (cardNumber.replace(/\s/g, '').length < 16) return;
     setProcessing(true);
-    
+
     try {
       const sessionToken = localStorage.getItem('as_token') || '';
       const res = await fetch(`${API_URL}/checkout/charge`, {
@@ -6517,14 +6609,14 @@ function CheckoutPage() {
         },
         body: JSON.stringify({ plan: 'premium', card_token: 'tok_mock_success' })
       });
-      
+
       if (!res.ok) throw new Error('Payment failed on server');
-      
+
       // Update local React state to unlock UI immediately
       engine.setUserTier('premium');
       // Trigger a status refresh so the whole app is synced
       engine.fetchState();
-      
+
       setProcessing(false);
       setSuccess(true);
     } catch (err) {
@@ -6629,7 +6721,7 @@ function CheckoutPage() {
 function SiteGeoMap({ log }) {
   const targetSite = { lat: 30.3165, lng: 78.0322 };
   const events = (log || []).filter(ev => typeof ev.lat === 'number' && typeof ev.lng === 'number').slice(0, 15);
-  
+
   if (events.length === 0) {
     return (
       <div className="glass-card" style={{ marginBottom: 20, textAlign: 'center', padding: '32px 0' }}>

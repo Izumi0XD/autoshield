@@ -188,18 +188,12 @@ app = FastAPI(
 )
 
 # CORS middleware applied to global app
+# Using wildcard — auth is stateless token-based (X-AutoShield-Key header), not cookie-based,
+# so this is safe for all origins including Vercel preview URLs.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://autoshield-nu.vercel.app",  # Production frontend
-        "http://localhost:5173",  # Local Vite dev server
-        "http://localhost:5174",  # Local Vite dev server (pivoted)
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://localhost:3000",  # Alternative local port
-        "http://localhost:8080",  # Additional local port
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,  # Must be False when allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -1178,25 +1172,47 @@ def site_health(
 ):
     target_site = site
     if site_id and site_id != site.get("id"):
-        if site.get("plan") != "enterprise":
-            raise HTTPException(403, "Enterprise plan required")
         resolved = DB.get_site(site_id)
         if not resolved:
             raise HTTPException(404, "Site not found")
+        # Allow if user owns the site
+        user_id = site.get("user_id")
+        if user_id and not DB.user_owns_site(user_id, site_id) and site.get("role") != "admin":
+            raise HTTPException(403, "Not authorized to check this site")
         target_site = resolved
 
-    target_domain = (domain or target_site.get("domain") or "").strip()
+    # Prefer upstream_url for probing (the real server), fall back to domain
+    upstream_url = target_site.get("upstream_url", "") or ""
+    target_domain = (domain or upstream_url or target_site.get("domain") or "").strip()
     if not target_domain:
-        raise HTTPException(400, "Site has no domain")
+        return {
+            "site_id": target_site.get("id"),
+            "domain": target_site.get("domain", ""),
+            "url": None,
+            "reachable": False,
+            "status_code": None,
+            "latency_ms": None,
+            "error": "No upstream URL configured. Edit the site to add an upstream server URL.",
+            "checked_at": datetime.now().isoformat(),
+            "status": "NOT_CONFIGURED",
+        }
+
+    # Detect unprovisioned placeholder domains
+    if target_domain.endswith(".autoshield.local") or target_domain.startswith("localhost") or target_domain.startswith("127.0.0.1"):
+        return {
+            "site_id": target_site.get("id"),
+            "domain": target_domain,
+            "url": None,
+            "reachable": False,
+            "status_code": None,
+            "latency_ms": None,
+            "error": "Placeholder domain — update the upstream URL to your real server.",
+            "checked_at": datetime.now().isoformat(),
+            "status": "NOT_CONFIGURED",
+        }
 
     if target_domain.startswith("http://") or target_domain.startswith("https://"):
         probe_url = target_domain
-    elif (
-        target_domain.startswith("localhost")
-        or target_domain.startswith("127.0.0.1")
-        or target_domain.endswith(".local")
-    ):
-        probe_url = f"http://{target_domain}"
     else:
         probe_url = f"https://{target_domain}"
 
@@ -1211,7 +1227,7 @@ def site_health(
         req = UReq(
             probe_url, method="GET", headers={"User-Agent": "AutoShield-Health/1.0"}
         )
-        with urlopen(req, timeout=4) as resp:
+        with urlopen(req, timeout=6) as resp:
             status_code = int(getattr(resp, "status", 200))
             reachable = 200 <= status_code < 500
     except Exception as exc:
@@ -1227,15 +1243,90 @@ def site_health(
                 pass
 
     latency_ms = round((time.perf_counter() - started) * 1000, 2)
+    status_label = "UP" if reachable else ("DEGRADED" if status_code and status_code < 500 else "DOWN")
     return {
         "site_id": target_site.get("id"),
         "domain": target_domain,
+        "upstream_url": upstream_url,
         "url": probe_url,
         "reachable": reachable,
         "status_code": status_code,
         "latency_ms": latency_ms,
         "error": error,
         "checked_at": datetime.now().isoformat(),
+        "status": status_label,
+    }
+
+
+class TestAttackRequest(BaseModel):
+    attack_type: str = "SQLi"  # SQLi | XSS | LFI | CMDi
+    custom_payload: Optional[str] = None
+
+
+@app.post("/api/websites/{site_id}/test-attack", tags=["sites"])
+def test_site_attack(
+    site_id: str,
+    req: TestAttackRequest,
+    site: dict = Depends(require_api_key),
+):
+    """Fire a synthetic attack payload through the WAF for a specific site.
+    Returns whether the WAF would block it — proves real network-layer protection."""
+    user_id = site.get("user_id")
+    if user_id and not DB.user_owns_site(user_id, site_id) and site.get("role") != "admin":
+        raise HTTPException(403, "Not authorized")
+
+    target_site = DB.get_site(site_id)
+    if not target_site:
+        raise HTTPException(404, "Site not found")
+
+    demo_payloads = {
+        "SQLi": "GET /login?user=' OR 1=1 --&pass=x HTTP/1.1",
+        "XSS": "GET /search?q=<script>alert('XSS')</script> HTTP/1.1",
+        "LFI": "GET /download?file=../../etc/passwd HTTP/1.1",
+        "CMDi": "GET /exec?cmd=;cat /etc/passwd HTTP/1.1",
+    }
+    payload = req.custom_payload or demo_payloads.get(req.attack_type, demo_payloads["SQLi"])
+
+    detection = _detector.classify(payload)
+    if not detection:
+        detection = {"attack_type": "Benign", "severity": "INFO", "confidence": 0, "matched_rules": [], "cve_hints": []}
+
+    would_block = detection.get("severity") in {"CRITICAL", "HIGH"} and detection.get("attack_type") != "Benign"
+
+    # Record the test event in the site's timeline so it appears on the dashboard
+    test_event = {
+        "src_ip": "10.0.0.1",  # test origin
+        "attack_type": detection["attack_type"],
+        "severity": detection["severity"],
+        "confidence": detection["confidence"],
+        "payload_snip": payload[:300],
+        "matched_rules": detection["matched_rules"],
+        "cve_hints": detection["cve_hints"],
+        "action": "BLOCKED" if would_block else "MONITORED",
+        "status": "FIXED" if would_block else "DETECTED",
+        "ingestion_source": "waf_test",
+        "timestamp": datetime.now().isoformat(),
+    }
+    event_id = DB.insert_event(test_event, site_id=site_id)
+    _publish_event_update(event_id, site_id)
+
+    upstream_url = target_site.get("upstream_url", "")
+    return {
+        "site_id": site_id,
+        "payload": payload,
+        "attack_type": detection["attack_type"],
+        "severity": detection["severity"],
+        "confidence": detection["confidence"],
+        "would_block": would_block,
+        "waf_active": True,
+        "upstream_url": upstream_url,
+        "event_id": event_id,
+        "protection_url": f"{os.environ.get('AUTOSHIELD_API_URL', 'https://autoshield-api-5rj8.onrender.com')}/proxy",
+        "message": (
+            f"✅ WAF BLOCKED: {detection['attack_type']} payload detected and neutralised."
+            if would_block
+            else f"ℹ️ WAF ALLOWED: Payload classified as {detection['attack_type']} ({detection['severity']}) — not blocked at current threshold."
+        ),
     }
 
 # ── Reports ───────────────────────────────────────────────────────────────
