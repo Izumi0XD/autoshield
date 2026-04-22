@@ -554,6 +554,12 @@ def create_app() -> "FastAPI":
         path: str, request: Request, site: dict = Depends(require_api_key)
     ):
         client_ip = request.client.host if request.client else "0.0.0.0"
+
+        # TEMP DEBUG: Log all proxy requests
+        log.info(
+            f"PROXY REQUEST: {request.method} /{path} from {client_ip} site:{site.get('id')}"
+        )
+
         if client_ip in _proxy_blocked_ips:
             return JSONResponse(
                 status_code=403,
@@ -580,20 +586,37 @@ def create_app() -> "FastAPI":
             "headers": dict(request.headers),
         }
 
-        # Use the existing detector (classify method)
+        # Build comprehensive detection payload
         payload_str = f"{request.method} /{path}"
         if request.url.query:
             payload_str += f"?{request.url.query}"
+
+        # Include headers in detection (important for attack patterns)
+        headers_str = " ".join(
+            [
+                f"{k}:{v}"
+                for k, v in request.headers.items()
+                if k.lower() not in ["host", "content-length", "x-autoshield-key"]
+            ]
+        )
+        payload_str += f" HEADERS:{headers_str}"
+
+        # Include body content
         if body:
-            payload_str += f" {body.decode('utf-8', errors='ignore')[:500]}"
+            body_content = body.decode("utf-8", errors="ignore")[
+                :1000
+            ]  # Increased limit
+            payload_str += f" BODY:{body_content}"
 
         result = _detector.classify(payload_str)
-        # TEMP DEBUG: Remove after confirming production works
+        # TEMP DEBUG: Force block all detected attacks for testing
         if result:
-            log.warning(f"WAF BLOCK: {result['attack_type']} detected in proxy request")
-        if result:
-            # Block immediately on detection for proxy requests
+            log.warning(
+                f"WAF BLOCK: {result['attack_type']} detected - {payload_str[:200]}..."
+            )
+            # TEMP: Force block for testing - remove condition dependency
             _proxy_blocked_ips.add(client_ip)
+            # Still call _process_event to log the event
             outcome = _process_event(
                 {
                     "src_ip": client_ip,
@@ -607,9 +630,11 @@ def create_app() -> "FastAPI":
                 content={
                     "blocked": True,
                     "attack_type": result["attack_type"],
-                    "detail": f"Threat detected: {result['attack_type']}. Blocked.",
+                    "severity": result.get("severity", "UNKNOWN"),
+                    "detail": f"WAF BLOCKED: {result['attack_type']} detected in proxy request",
                     "blocked_ip": client_ip,
                     "event_id": outcome.get("event_id"),
+                    "debug_payload": payload_str[:100],  # TEMP debug
                 },
             )
 
