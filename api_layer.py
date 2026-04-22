@@ -103,7 +103,8 @@ class _GlobalThreatState:
         self._lockdown: bool = False
 
     def record_attack(self, severity: str = "HIGH") -> None:
-        bump = {"CRITICAL": 22, "HIGH": 14, "MEDIUM": 8, "LOW": 3}.get(severity, 8)
+        # Reduced bumps so a burst of attacks doesn't instantly peg at 100
+        bump = {"CRITICAL": 12, "HIGH": 8, "MEDIUM": 5, "LOW": 2}.get(severity, 5)
         with self._lock:
             self._score = min(100.0, self._score + bump)
             self._last_attack_ts = time.time()
@@ -113,12 +114,12 @@ class _GlobalThreatState:
         with self._lock:
             if self._last_attack_ts is not None:
                 quiet_secs = time.time() - self._last_attack_ts
-                if quiet_secs > 30:
-                    # Decay: 1.5pt/s after 30s quiet
-                    decay = 1.5 * (quiet_secs - 30)
+                if quiet_secs > 20:  # Start decaying after 20s (was 30)
+                    # Decay: 2.0pt/s after 20s quiet (was 1.5pt/s after 30s)
+                    decay = 2.0 * (quiet_secs - 20)
                     self._score = max(0.0, self._score - decay)
                     # Update last_attack_ts so we don't double-decay on next call
-                    self._last_attack_ts = time.time() - 30
+                    self._last_attack_ts = time.time() - 20
             self._maybe_transition()
             return round(self._score, 1)
 
@@ -1727,18 +1728,19 @@ def get_stats(
             "headers": {},
         }
 
-    # Include backend-driven threat state
+    # Include backend-driven threat state (real-time, memory-only)
     threat_state_data = _global_threat.to_dict()
-    # Sync the global score with DB score (take whichever is higher)
-    if threat_score > threat_state_data["score"]:
-        _global_threat._score = float(threat_score)
+    # DO NOT sync DB score into _GlobalThreatState — DB uses 45-min window
+    # (old events would pin the live score at 100 even with no recent attacks).
+    # Instead return both: threatScore = DB history, activeThreatScore = live decay.
 
     return {
         "total": stats_raw.get("total", 0),
         "blocked": stats_raw.get("blocked", 0),
         "visitors": stats_raw.get("visitors", 0),
         "blockRate": stats_raw.get("block_rate", 0),
-        "threatScore": threat_score,
+        "threatScore": threat_score,              # DB-based, 45-min window
+        "activeThreatScore": threat_state_data["score"],  # Live, fast-decaying
         "byType": stats_raw.get("by_type", {}),
         "system": system_metrics,
         "audit": audit,

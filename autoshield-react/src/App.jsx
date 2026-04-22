@@ -1230,6 +1230,8 @@ const engine = (() => {
     getStateVersion: () => stateVersion,
     getStats: () => stats,
     getThreatScore: () => stats.threatScore || 0,
+    // activeThreatScore = live in-memory score (decays fast, 0 when no recent attacks)
+    getActiveThreatScore: () => stats.activeThreatScore ?? stats.threatScore ?? 0,
     getBackendHealth: () => backendHealth,
     getCVE: (type) => CVE_DB[type] || CVE_DB.SQLi,
     getConnection: () => connection,
@@ -3157,13 +3159,15 @@ function Dashboard() {
   const allLog = engine.getLog();
   const log = allLog.slice(0, 30);
   const blocked = engine.getBlockedIPs();
-  const threatScore = engine.getThreatScore();
+  // Use activeThreatScore (live, decays within ~50s of last attack)
+  const threatScore = engine.getActiveThreatScore();
   const [previousThreatScore, setPreviousThreatScore] = useState(threatScore);
   const [tab, setTab] = useState(0);
 
   // Track threat score changes for trend indicator
   useEffect(() => {
-    setPreviousThreatScore(threatScore);
+    const t = setTimeout(() => setPreviousThreatScore(threatScore), 800);
+    return () => clearTimeout(t);
   }, [threatScore]);
   const [trafficWindow, setTrafficWindow] = useState('1h');
 
