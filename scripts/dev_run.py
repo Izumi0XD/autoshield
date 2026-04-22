@@ -28,7 +28,7 @@ def _wait_for_port(port: int, timeout: float = 10.0) -> bool:
     return False
 
 
-def _pick_free_port(start: int = 8502, end: int = 8600) -> int:
+def _pick_free_port(start: int = 8503, end: int = 8600) -> int:
     for p in range(start, end + 1):
         if not _is_port_open(p):
             return p
