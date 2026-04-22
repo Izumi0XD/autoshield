@@ -296,15 +296,29 @@ function SystemMetrics({ metrics }) {
 
 // SOC Global Constants
 const API_URL = (() => {
+  // First priority: Environment variable (for production)
   const fromEnv = String(import.meta.env?.VITE_API_URL || '').trim();
-  if (fromEnv) return fromEnv.replace(/\/$/, '');
-  if (typeof window === 'undefined') return 'http://localhost:8503';
+  if (fromEnv) {
+    console.log('Using API URL from environment:', fromEnv);
+    return fromEnv.replace(/\/$/, '');
+  }
+
+  // Fallback for development
+  if (typeof window === 'undefined') {
+    console.log('SSR mode: using localhost:8503');
+    return 'http://localhost:8503';
+  }
 
   const host = window.location.hostname;
   if (!host || host === 'localhost' || host === '127.0.0.1') {
+    console.log('Local development: using localhost:8503');
     return 'http://localhost:8503';
   }
-  return `http://${host}:8503`;
+
+  // For other hosts, assume backend is on same host with port 8503
+  const fallbackUrl = `http://${host}:8503`;
+  console.log('Using fallback API URL:', fallbackUrl);
+  return fallbackUrl;
 })();
 const DEFAULT_DOMAINS = [];
 
