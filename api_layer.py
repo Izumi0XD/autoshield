@@ -87,6 +87,69 @@ _mitigation_worker_lock = threading.Lock()
 _mitigation_queue: "queue.Queue[tuple[int, str, dict, str]]" = queue.Queue(maxsize=5000)
 
 
+class _GlobalThreatState:
+    """
+    Singleton that tracks the platform-wide threat score with time-based decay.
+    State: NORMAL (< 40), ELEVATED (40-84), CRITICAL (>= 85).
+    Score decays 1.5 pts/sec after 30s of no attacks (half-life ~47s).
+    State transitions have a 10s cooldown to prevent flickering.
+    """
+    def __init__(self):
+        self._score: float = 0.0
+        self._state: str = "NORMAL"            # NORMAL | ELEVATED | CRITICAL
+        self._last_attack_ts: Optional[float] = None
+        self._last_state_change: float = 0.0
+        self._lock = threading.RLock()
+        self._lockdown: bool = False
+
+    def record_attack(self, severity: str = "HIGH") -> None:
+        bump = {"CRITICAL": 22, "HIGH": 14, "MEDIUM": 8, "LOW": 3}.get(severity, 8)
+        with self._lock:
+            self._score = min(100.0, self._score + bump)
+            self._last_attack_ts = time.time()
+            self._maybe_transition()
+
+    def get_decayed_score(self) -> float:
+        with self._lock:
+            if self._last_attack_ts is not None:
+                quiet_secs = time.time() - self._last_attack_ts
+                if quiet_secs > 30:
+                    # Decay: 1.5pt/s after 30s quiet
+                    decay = 1.5 * (quiet_secs - 30)
+                    self._score = max(0.0, self._score - decay)
+                    # Update last_attack_ts so we don't double-decay on next call
+                    self._last_attack_ts = time.time() - 30
+            self._maybe_transition()
+            return round(self._score, 1)
+
+    def _maybe_transition(self) -> None:
+        now = time.time()
+        if now - self._last_state_change < 10:
+            return  # Cooldown
+        new_state = "NORMAL"
+        if self._score >= 85:
+            new_state = "CRITICAL"
+        elif self._score >= 40:
+            new_state = "ELEVATED"
+        if new_state != self._state:
+            self._state = new_state
+            self._last_state_change = now
+            self._lockdown = (new_state == "CRITICAL")
+
+    def to_dict(self) -> dict:
+        score = self.get_decayed_score()
+        return {
+            "score": score,
+            "state": self._state,
+            "lockdown": self._lockdown,
+            "last_attack_ts": self._last_attack_ts,
+            "scored_at": datetime.now().isoformat(),
+        }
+
+
+_global_threat = _GlobalThreatState()
+
+
 def _safe_int(v, default: int) -> int:
     try:
         return int(v)
@@ -1632,6 +1695,12 @@ def get_stats(
             "headers": {},
         }
 
+    # Include backend-driven threat state
+    threat_state_data = _global_threat.to_dict()
+    # Sync the global score with DB score (take whichever is higher)
+    if threat_score > threat_state_data["score"]:
+        _global_threat._score = float(threat_score)
+
     return {
         "total": stats_raw.get("total", 0),
         "blocked": stats_raw.get("blocked", 0),
@@ -1642,6 +1711,10 @@ def get_stats(
         "system": system_metrics,
         "audit": audit,
         "isGlobal": is_global,
+        "threatState": threat_state_data["state"],
+        "threatStateLockdown": threat_state_data["lockdown"],
+        "lastAttackTs": threat_state_data["last_attack_ts"],
+        "scoredAt": threat_state_data["scored_at"],
     }
 
 @app.get("/threats", tags=["analytics"])
@@ -2145,6 +2218,10 @@ def _process_event(ev_data: dict, site: dict) -> dict:
             "matched_rules": [],
             "cve_hints": [],
         }
+
+    # Bump global threat state for real attacks
+    if detection["severity"] in ("CRITICAL", "HIGH", "MEDIUM"):
+        _global_threat.record_attack(detection["severity"])
 
     event = {
         "timestamp": ev_data.get("timestamp") or datetime.now().isoformat(),

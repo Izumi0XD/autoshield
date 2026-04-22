@@ -396,7 +396,8 @@ const engine = (() => {
   // ═══ NOTIFICATION SYSTEM ═══
   let notifications = [];
   let notifId = 0;
-  const MAX_NOTIFICATIONS = 50;
+  const MAX_VISIBLE_NOTIFICATIONS = 3;   // max popup toasts at once
+  const MAX_STORED_NOTIFICATIONS = 100;  // history panel limit
 
   // ═══ GEO-BLOCKING ═══
   let blockedCountries = new Set(JSON.parse(localStorage.getItem('as_blocked_countries') || '[]'));
@@ -416,14 +417,16 @@ const engine = (() => {
       visible: true,
     };
     notifications.unshift(notif);
-    if (notifications.length > MAX_NOTIFICATIONS) notifications.pop();
+    // Trim storage history
+    if (notifications.length > MAX_STORED_NOTIFICATIONS) notifications.pop();
+    // Auto-hide popup after 6s
     setTimeout(() => {
       const idx = notifications.findIndex(n => n.id === notif.id);
       if (idx !== -1) {
         notifications[idx].visible = false;
         notify();
       }
-    }, 5000);
+    }, 6000);
     notify();
     return notif;
   };
@@ -2785,29 +2788,30 @@ function Layout() {
 
   const [showNotifs, setShowNotifs] = useState(false);
   const notifications = engine.getNotifications();
-  const recentNotifications = notifications.slice(0, 3);
-  const unreadCount = recentNotifications.filter((n) => !n.read).length;
+  const recentNotifications = notifications.slice(0, 15);
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
+  // ─── Backend-driven lockdown ───────────────────────────────────────────────
+  // Reads threatState from /stats response (set by _GlobalThreatState on backend)
+  const backendThreatState = stats?.threatState || 'NORMAL'; // 'NORMAL' | 'ELEVATED' | 'CRITICAL'
   const [lockdownState, setLockdownState] = useState('none'); // 'none', 'active', 'fixing', 'fixed'
   const [lockdownPulseId, setLockdownPulseId] = useState(0);
-
-  // Count active threats strictly within the last 15 seconds so lockdown goes away when things quiet down
-  const now = new Date().getTime();
-  const activeThreats = engine.getRecentLog(30).filter(e => {
-    const isRecent = now - new Date(e.timestamp).getTime() < 15000;
-    return !isEventFixed(e) && isRecent;
-  }).length;
+  const [prevBackendState, setPrevBackendState] = useState('NORMAL');
 
   useEffect(() => {
-    if (activeThreats >= 5 && lockdownState !== 'active') {
+    if (backendThreatState === prevBackendState) return;
+    setPrevBackendState(backendThreatState);
+    if (backendThreatState === 'CRITICAL' && lockdownState !== 'active') {
       setLockdownState('active');
-    } else if (activeThreats > 0 && activeThreats < 5 && lockdownState === 'active') {
+    } else if (backendThreatState === 'ELEVATED' && lockdownState === 'active') {
       setLockdownState('fixing');
-    } else if (activeThreats === 0 && (lockdownState === 'active' || lockdownState === 'fixing')) {
-      setLockdownState('fixed');
-      setTimeout(() => setLockdownState('none'), 4000);
+    } else if (backendThreatState === 'NORMAL') {
+      if (lockdownState === 'active' || lockdownState === 'fixing') {
+        setLockdownState('fixed');
+        setTimeout(() => setLockdownState('none'), 5000);
+      }
     }
-  }, [activeThreats, lockdownState]);
+  }, [backendThreatState, lockdownState, prevBackendState]);
 
   useEffect(() => {
     if (lockdownState === 'active') {

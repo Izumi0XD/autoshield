@@ -446,3 +446,157 @@ input, select, textarea { font-family: inherit; color: inherit; cursor: text; }
   .main, .content { margin: 0 !important; padding: 0 !important; border: none !important; }
   .glass-card { background: white; border: 1px solid #ccc; color: black; box-shadow: none; break-inside: avoid; }
 }
+
+/* ══════════════════════════════════════════════════════════
+   ENTERPRISE PREMIUM UPGRADES — v3.0
+══════════════════════════════════════════════════════════ */
+
+/* ─── Enhanced Card System ─────────────────────────────── */
+.glass-card {
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+.glass-card:hover {
+  border-color: rgba(0, 200, 255, 0.18) !important;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,200,255,0.06);
+  transform: translateY(-1px);
+}
+
+/* ─── Threat State Color Classes ──────────────────────── */
+.state-normal  { color: var(--green) !important; }
+.state-elevated { color: var(--yellow) !important; }
+.state-critical { color: var(--red) !important; }
+
+.badge-normal   { background: rgba(34,197,94,0.12);  color: var(--green);  border: 1px solid rgba(34,197,94,0.25); }
+.badge-elevated { background: rgba(234,179,8,0.12);  color: var(--yellow); border: 1px solid rgba(234,179,8,0.25); }
+.badge-critical { background: rgba(239,68,68,0.12);  color: var(--red);    border: 1px solid rgba(239,68,68,0.25); animation: badge-pulse 1.2s ease-in-out infinite; }
+
+@keyframes badge-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+  50%       { box-shadow: 0 0 0 4px rgba(239,68,68,0); }
+}
+
+/* ─── Enhanced Lockdown Banner ────────────────────────── */
+.lockdown-banner {
+  position: absolute; top: 0; left: 0; width: 100%;
+  text-align: center;
+  font-family: 'Anton', sans-serif;
+  font-size: 20px;
+  letter-spacing: 4px;
+  padding: 10px 0;
+  text-transform: uppercase;
+  animation: slide-down 0.4s cubic-bezier(0.16,1,0.3,1);
+  will-change: transform;
+  z-index: 9999;
+}
+.lockdown-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(255,255,255,0.08) 50%,
+    transparent 100%
+  );
+  animation: banner-sweep 2s linear infinite;
+}
+@keyframes banner-sweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+
+/* Critical orb enhanced glow */
+.threat-orb.critical {
+  background: radial-gradient(circle, rgba(239,68,68,0.9) 0%, rgba(239,68,68,0.05) 70%);
+  border: 2px solid var(--red);
+  box-shadow: 0 0 0 0 rgba(239,68,68,0.6);
+  animation: orb-pulse-critical 1s cubic-bezier(0.4,0,0.6,1) infinite;
+}
+@keyframes orb-pulse-critical {
+  0%   { box-shadow: 0 0 40px rgba(239,68,68,0.5), 0 0 0 0 rgba(239,68,68,0.4); }
+  50%  { box-shadow: 0 0 80px rgba(239,68,68,0.8), 0 0 20px rgba(239,68,68,0); }
+  100% { box-shadow: 0 0 40px rgba(239,68,68,0.5), 0 0 0 0 rgba(239,68,68,0); }
+}
+
+/* Elevated orb */
+.threat-orb.warning {
+  background: radial-gradient(circle, rgba(234,179,8,0.8) 0%, rgba(234,179,8,0.08) 70%);
+  border: 2px solid var(--yellow);
+  box-shadow: 0 0 50px rgba(234,179,8,0.3);
+  animation: orb-pulse-elevated 2s ease-in-out infinite;
+}
+@keyframes orb-pulse-elevated {
+  0%, 100% { box-shadow: 0 0 40px rgba(234,179,8,0.3); }
+  50%       { box-shadow: 0 0 70px rgba(234,179,8,0.6); }
+}
+
+/* ─── Premium Button States ───────────────────────────── */
+.btn-primary:active,
+.evolve-button-primary:active { transform: translateY(0) scale(0.98); }
+.btn-primary:disabled,
+.evolve-button-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.btn-secondary:active,
+.evolve-button-secondary:active { transform: scale(0.98); }
+.btn-secondary:disabled,
+.evolve-button-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.attack-btn:active { transform: scale(0.96); }
+.attack-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* ─── Metric Value Glow ───────────────────────────────── */
+.metric-value-glow-green { filter: drop-shadow(0 0 8px rgba(34,197,94,0.5)); }
+.metric-value-glow-red   { filter: drop-shadow(0 0 8px rgba(239,68,68,0.5)); }
+.metric-value-glow-cyan  { filter: drop-shadow(0 0 8px rgba(0,200,255,0.4)); }
+
+/* ─── Score Transition ────────────────────────────────── */
+.threat-score-value {
+  transition: color 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: color;
+}
+
+/* ─── Status Indicators ───────────────────────────────── */
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.status-dot.online  { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse-dot 2s ease infinite; }
+.status-dot.warning { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+.status-dot.offline { background: var(--red); box-shadow: 0 0 6px var(--red); }
+
+/* ─── Notification Panel Polish ───────────────────────── */
+.notif-panel {
+  width: 360px;
+  max-height: 480px;
+  overflow-y: auto;
+  background: rgba(8,11,16,0.98);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 0 1px rgba(0,200,255,0.04);
+  scrollbar-width: thin;
+}
+
+/* ─── Toast border-left severity indicator ─────────────── */
+.toast-critical { border-left: 3px solid var(--red) !important; }
+.toast-high     { border-left: 3px solid var(--orange) !important; }
+.toast-success  { border-left: 3px solid var(--green) !important; }
+.toast-info     { border-left: 3px solid var(--cyan) !important; }
+
+/* ─── Spacing Grid Helpers ────────────────────────────── */
+.gap-2  { gap: 8px; }
+.gap-3  { gap: 12px; }
+.gap-4  { gap: 16px; }
+.gap-6  { gap: 24px; }
+.p-4    { padding: 16px; }
+.p-6    { padding: 24px; }
+.mb-2   { margin-bottom: 8px; }
+.mb-4   { margin-bottom: 16px; }
+.mt-2   { margin-top: 8px; }
+.mt-4   { margin-top: 16px; }
