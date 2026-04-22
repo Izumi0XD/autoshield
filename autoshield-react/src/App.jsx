@@ -754,6 +754,12 @@ const engine = (() => {
   };
 
   const connectSSE = (userToken) => {
+    // — Hard guard: never connect with missing/invalid token —
+    if (!userToken || userToken === 'null' || userToken === 'undefined') {
+      console.warn('[AutoShield] connectSSE called with no token — aborting');
+      return;
+    }
+
     streamSeq += 1;
     const seq = streamSeq;
     const streamStartedAt = Date.now();
@@ -1021,6 +1027,10 @@ const engine = (() => {
       });
       if (res.status === 401 || res.status === 403) {
         console.warn('Auth context rejection. Clearing session.');
+        // Kill active connections immediately so no timer re-fires with null token
+        streamSeq += 1; // invalidates all in-flight SSE reconnect timers
+        if (eventSource) { try { eventSource.close(); } catch (_) {} eventSource = null; }
+        if (wsSocket) { try { wsSocket.close(); } catch (_) {} wsSocket = null; }
         localStorage.removeItem('as_token');
         localStorage.removeItem('as_user');
         localStorage.removeItem('as_tier');
