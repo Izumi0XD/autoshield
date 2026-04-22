@@ -263,6 +263,10 @@ async def threat_detection_middleware(request: Request, call_next):
         "/simulator",
         "/telemetry",
         "/ws/",
+        "/api/",        # Management API — never WAF-inspect these
+        "/debug/",
+        "/threat-score",
+        "/profile",
     )
     if request.url.path.startswith(internal_prefixes):
         return await call_next(request)
@@ -393,7 +397,16 @@ async def require_api_key(
             site_obj["username"] = user.get("username")
             site_obj["profile_site_id"] = default_site_id or user.get("site_id")
             return site_obj
-        return {"id": "site_demo", "config": {}, "plan": "enterprise"}
+        # No site found yet (new user) — return minimal context with user_id so
+        # create_site_endpoint can create + link their first site correctly.
+        return {
+            "id": "site_demo",
+            "config": {},
+            "plan": str(user.get("tier", "free")),
+            "user_id": user.get("id"),        # <-- critical: always provide user_id
+            "role": user.get("role", "user"),
+            "username": user.get("username", ""),
+        }
 
     log.warning(
         f"AUTH FAIL: Invalid key/token '{key[:8]}...' from {request.client.host if request.client else 'unknown'}"
