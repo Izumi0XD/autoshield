@@ -18,6 +18,9 @@ from pathlib import Path
 from urllib.parse import urlencode
 import urllib.request as urllib_request
 
+# CORS support for frontend integration
+from fastapi.middleware.cors import CORSMiddleware
+
 urlopen = urllib_request.urlopen
 
 log = logging.getLogger("AutoShield.API")
@@ -192,6 +195,20 @@ def create_app() -> "FastAPI":
         title="AutoShield AI",
         description="Real-time web attack detection and response API",
         version="2.0.0",
+    )
+
+    # CORS middleware for frontend integration
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "https://autoshield-nu.vercel.app",  # Production frontend
+            "http://localhost:5173",  # Local Vite dev server
+            "http://localhost:3000",  # Alternative local port
+            "http://localhost:8080",  # Additional local port
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     @app.get("/")
