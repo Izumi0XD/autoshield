@@ -833,19 +833,55 @@ def get_top_threats(limit: int = 10) -> list:
     return [_row_to_dict(r) for r in rows]
 
 
-def get_threat_score_decayed(site_id: str) -> dict:
-    import math
-    score = get_threat_score(site_id)
-    label = "CLEAN"
-    if score >= 80:
-        label = "CRITICAL THREAT"
-    elif score >= 60:
-        label = "HIGH THREAT"
-    elif score >= 40:
-        label = "MEDIUM THREAT"
-    elif score >= 20:
-        label = "LOW THREAT"
-    return {"threat_score": score, "threat_label": label}
+def get_threat_score(site_id: str) -> int:
+    window_minutes = 45
+    since = (datetime.now() - timedelta(minutes=window_minutes)).isoformat()
+    with db() as conn:
+        if site_id in ("all", "global"):
+            events = conn.execute(
+                "SELECT severity, timestamp, action, status FROM events WHERE timestamp >= ? AND attack_type != 'Benign'",
+                (since,),
+            ).fetchall()
+        else:
+            events = conn.execute(
+                "SELECT severity, timestamp, action, status FROM events WHERE site_id=? AND timestamp >= ? AND attack_type != 'Benign'",
+                (site_id, since),
+                ).fetchall()
+
+    if not events:
+        return 0
+
+    total_weight = 0.0
+    sev_weights = {"CRITICAL": 26.0, "HIGH": 14.0, "MEDIUM": 6.0, "LOW": 2.0}
+    now = datetime.now()
+
+    for ev in events:
+        ev = dict(ev) # 🔥 THIS LINE FIXES EVERYTHING
+
+        sev = str(ev.get("severity") or "LOW").upper()
+        status = str(ev.get("status") or "").upper()
+        action = str(ev.get("action") or "").upper()
+        try:
+            age_seconds = (now - datetime.fromisoformat(ev["timestamp"])).total_seconds()
+        except Exception:
+            age_seconds = 0
+        base = sev_weights.get(sev, 1.0)
+        unresolved = status in {"DETECTED", "MITIGATING"} and action != "BLOCKED"
+        fixed = action == "BLOCKED" or status in {"FIXED", "MITIGATED"}
+        if unresolved:
+            total_weight += base * 1.7 * max(0.0, 1.0 - (age_seconds / 300.0))
+        elif fixed:
+            total_weight += base * 0.85 * max(0.0, 1.0 - (age_seconds / 900.0))
+        else:
+            total_weight += base * 0.4 * max(0.0, 1.0 - (age_seconds / 300.0))
+
+    last_event_time = max(datetime.fromisoformat(ev["timestamp"]) for ev in events)
+    time_since_last = (now - last_event_time).total_seconds()
+    if time_since_last > 300:
+        decay_factor = max(0.0, 1.0 - (time_since_last - 300) / 1800.0)
+        total_weight *= decay_factor
+
+    return min(100, int(total_weight))
 
 
 # ─── Rules ────────────────────────────────────────────────────────────────────
@@ -980,7 +1016,7 @@ def create_site(name, domain, plan="free", user_id=None, upstream_url=None) -> d
         )
     if user_id:
         log_activity(user_id, "ADD_WEBSITE", f"Added website '{name}' ({domain})",
-                     {"site_id": site_id, "domain": domain})
+                        {"site_id": site_id, "domain": domain})
     return {"site_id": site_id, "api_key": api_key, "id": site_id, "upstream_url": upstream}
 
 
@@ -989,8 +1025,8 @@ def delete_site(site_id: str, user_id: str) -> bool:
         site = get_site(site_id)
         if site:
             log_activity(user_id, "DELETE_WEBSITE",
-                         f"Removed website '{site['name']}' ({site['domain']})",
-                         {"site_id": site_id})
+                            f"Removed website '{site['name']}' ({site['domain']})",
+                            {"site_id": site_id})
         return True
     return False
 
@@ -1225,7 +1261,7 @@ def upsert_site_audit(site_id, score, ssl_status, ssl_expiry, headers, audit_log
             VALUES (?,?,?,?,?,?,?)
             """,
             (site_id, datetime.now().isoformat(), score, ssl_status, ssl_expiry,
-             json.dumps(headers), json.dumps(audit_log_data)),
+                json.dumps(headers), json.dumps(audit_log_data)),
         )
 
 
