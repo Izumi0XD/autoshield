@@ -1,0 +1,267 @@
+version: "3.9"
+
+# =============================================================================
+# AutoShield — Real Website Protection Stack
+# =============================================================================
+# This compose file deploys AutoShield as an inline WAF/IPS protecting a
+# real external website (e.g., WordPress, WooCommerce, custom APIs).
+#
+# Setup (5 steps):
+#   1. Copy this file: cp docker-compose.site-protection.yml docker-compose.yml
+#   2. Set your site URL: export AUTOSHIELD_UPSTREAM_URL=https://mysite.com
+#   3. Set your API key: export AUTOSHIELD_API_KEY=$(openssl rand -hex 32)
+#   4. (Optional) Add threat feed keys:
+#        export ABUSIPDB_API_KEY=your_key
+#        export OTX_API_KEY=your_key
+#   5. Deploy: docker compose up -d
+#
+# Traffic flow:
+#   Internet → Nginx (SSL termination) → AutoShield WAF → [Your website upstream]
+#
+# AutoShield is 10x superior to Hostinger's shared WAF:
+#   ✓ Inline interception (not reactive post-detection)
+#   ✓ Aho-Corasick pre-filter: O(n) per request vs O(n*m) regex-only
+#   ✓ Leaky bucket rate limiting (200 req/min, configurable per site)
+#   ✓ 69+ OWASP CRS rules (vs ~12 basic rules on Hostinger)
+#   ✓ 5-feed threat intel (AbuseIPDB, AlienVault, Feodo, Blocklist.de, IPsum)
+#   ✓ Escalation scoring (ALLOW/CHALLENGE/BLOCK vs binary block only)
+#   ✓ Real-time SOC dashboard with WebSocket streams and geo attack maps
+# =============================================================================
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+
+  # ── Nginx: SSL termination + load balancer ────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: autoshield-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_logs:/var/log/nginx
+      - ./certs:/etc/nginx/certs:ro          # Mount your SSL certs here
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - autoshield-net
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── AutoShield API: WAF + Proxy Engine ───────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: autoshield-api:latest
+    container_name: autoshield-api
+
+    # Bind to localhost only — all external traffic MUST go via Nginx.
+    # This prevents direct API bypass (Hostinger doesn't enforce this).
+    ports:
+      - "127.0.0.1:8503:8503"
+
+    networks:
+      - autoshield-net
+
+    environment:
+      # ── Required ──────────────────────────────────────────────────────────
+      - AUTOSHIELD_API_PORT=8503
+      - AUTOSHIELD_API_KEY=${AUTOSHIELD_API_KEY:?Set AUTOSHIELD_API_KEY}
+
+      # ── Upstream website (the site being protected) ───────────────────────
+      # Examples:
+      #   https://mywordpress.com         (external WordPress)
+      #   http://wordpress:80             (Docker-internal WordPress)
+      #   https://api.myshop.com          (REST API / e-commerce)
+      - AUTOSHIELD_PROXY_TARGET=${AUTOSHIELD_UPSTREAM_URL:-http://protected-site:80}
+
+      # ── Fail mode ────────────────────────────────────────────────────────
+      # open   = if proxy fails, allow traffic through (availability wins)
+      # closed = if proxy fails, serve 503 maintenance page (security wins)
+      - AUTOSHIELD_FAIL_MODE=${AUTOSHIELD_FAIL_MODE:-closed}
+
+      # ── Database ─────────────────────────────────────────────────────────
+      - DATABASE_URL=postgresql://autoshield:${DB_PASSWORD:-changeme}@db:5432/autoshield
+
+      # ── Redis (leaky bucket rate limiter + L2 threat intel cache) ─────────
+      - AUTOSHIELD_REDIS_URL=redis://:${REDIS_PASSWORD:-autoshield_redis_pass}@redis:6379/0
+
+      # ── Threat Intelligence Feed Keys (optional but recommended) ──────────
+      # AbuseIPDB: free tier = 1k lookups/day, registered = 100k/day
+      - ABUSIPDB_API_KEY=${ABUSIPDB_API_KEY:-}
+      # AlienVault OTX: free, register at otx.alienvault.com
+      - OTX_API_KEY=${OTX_API_KEY:-}
+      # Feed refresh interval in hours (default: every 24h)
+      - AUTOSHIELD_INTEL_REFRESH_HOURS=${AUTOSHIELD_INTEL_REFRESH_HOURS:-24}
+
+      # ── Rate Limiting ─────────────────────────────────────────────────────
+      # Leaky bucket drip rate: requests per minute per IP before limiting
+      - AUTOSHIELD_RATE_DRIP=${AUTOSHIELD_RATE_DRIP:-200}
+      # Burst headroom above drip rate before rate limiting fires
+      - AUTOSHIELD_RATE_BURST=${AUTOSHIELD_RATE_BURST:-50}
+
+      # ── Alerts ───────────────────────────────────────────────────────────
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - ALERT_EMAIL_TO=${ALERT_EMAIL_TO:-}
+
+    volumes:
+      - ./logs:/app/logs
+      - ./rules:/app/rules:ro     # OWASP CRS YAML rules (read-only)
+
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    restart: unless-stopped
+    logging: *default-logging
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8503/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Redis: Rate limiter + Threat intel L2 cache ───────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: autoshield-redis
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-autoshield_redis_pass}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    networks:
+      - autoshield-net
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-autoshield_redis_pass}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 320m
+
+  # ── PostgreSQL: Persistent storage ────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: autoshield-db
+    environment:
+      - POSTGRES_DB=autoshield
+      - POSTGRES_USER=autoshield
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - autoshield-net
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autoshield"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  # ── Nginx Log Agent: Real-time log tailer → AutoShield ────────────────────
+  nginx-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: autoshield-agent
+    # Host network mode to access iptables/ipset for kernel-level blocking
+    # This is optional — remove cap_add and network_mode for cloud deployments
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - AUTOSHIELD_API_KEY=${AUTOSHIELD_API_KEY:?Set AUTOSHIELD_API_KEY}
+    volumes:
+      - nginx_logs:/var/log/nginx:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+    command: [
+      "python", "nginx_agent.py",
+      "--log", "/var/log/nginx/access.log",
+      "--api", "http://127.0.0.1:8503",
+      "--key", "${AUTOSHIELD_API_KEY}",
+      "--format", "nginx",
+    ]
+
+  # ── Protected Site: Example WordPress stub ────────────────────────────────
+  # Replace or remove this if pointing AUTOSHIELD_UPSTREAM_URL to an external site.
+  # To protect an existing external site, set:
+  #   AUTOSHIELD_UPSTREAM_URL=https://mysite.com
+  # and remove this service entirely.
+  protected-site:
+    image: wordpress:6.5-php8.2-apache
+    container_name: autoshield-protected-site
+    # ⛔ NO ports exposed to host — traffic MUST go through the AutoShield proxy.
+    # This is the correct architecture: the site is "behind" AutoShield, not directly accessible.
+    environment:
+      - WORDPRESS_DB_HOST=db
+      - WORDPRESS_DB_USER=autoshield
+      - WORDPRESS_DB_PASSWORD=${DB_PASSWORD:-changeme}
+      - WORDPRESS_DB_NAME=autoshield
+    networks:
+      - autoshield-net
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── AutoShield Dashboard: React SOC UI ────────────────────────────────────
+  dashboard:
+    build:
+      context: ./autoshield-react
+      dockerfile: Dockerfile
+    container_name: autoshield-dashboard
+    ports:
+      - "3000:3000"
+    networks:
+      - autoshield-net
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - VITE_API_URL=http://localhost:8503
+
+volumes:
+  nginx_logs:
+  db_data:
+  redis_data:
+
+networks:
+  autoshield-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

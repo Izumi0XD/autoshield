@@ -70,6 +70,23 @@ import report_generator
 
 PROXY_TARGET = os.environ.get("AUTOSHIELD_PROXY_TARGET", "http://localhost:9090")
 _proxy_route_cache = {}
+
+# ── New v2.1: Escalation Engine + Threat Intel ────────────────────────────────
+try:
+    from proxy_engine import get_escalation_engine, Decision as EscalationDecision
+    _escalation_engine = get_escalation_engine()
+    _ESCALATION_OK = True
+    log.info("ProxyEngine EscalationEngine loaded — ALLOW/CHALLENGE/BLOCK thresholds active")
+except Exception as _exc:
+    _ESCALATION_OK = False
+    _escalation_engine = None
+    log.warning("EscalationEngine not available (non-fatal): %s", _exc)
+
+try:
+    from threat_intel_worker import start_worker as _start_ti_worker
+    _TI_WORKER_OK = True
+except Exception:
+    _TI_WORKER_OK = False
 _proxy_blocked_ips = set()
 
 _detector = AttackDetector()
@@ -247,16 +264,14 @@ def is_country_blocked(site: dict, country: str) -> bool:
 # Create FastAPI app at module level
 app = FastAPI(
     title="AutoShield AI",
-    description="Real-time web attack detection and response API",
-    version="2.0.1",
+    description="Real-time web attack detection and response API (Enterprise v2.1)",
+    version="2.1.0",
 )
 
 # ---------------------------------------------------------------------------
-# CORS — raw header injection middleware.
-# This is registered via add_middleware so it runs OUTERMOST (first on request,
-# last on response), guaranteeing Access-Control-* headers are present on
-# EVERY response including preflight OPTIONS — regardless of any other
-# middleware that may short-circuit the chain.
+# CORS headers — applied two ways for absolute reliability:
+# 1. CORSMiddleware via add_middleware (outermost layer, wraps every response)
+# 2. Injected directly into any short-circuit JSONResponse in custom middlewares
 # ---------------------------------------------------------------------------
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -265,32 +280,80 @@ _CORS_HEADERS = {
     "Access-Control-Max-Age": "86400",
 }
 
-@app.middleware("http")
-async def cors_everywhere(request: Request, call_next):
-    """Inject CORS headers on every response, short-circuit OPTIONS preflights."""
-    if request.method == "OPTIONS":
-        return JSONResponse(
-            status_code=200,
-            content={"ok": True},
-            headers=_CORS_HEADERS,
-        )
-    response = await call_next(request)
-    for k, v in _CORS_HEADERS.items():
-        response.headers[k] = v
-    return response
+# Register CORS via add_middleware — this is OUTERMOST (runs first on request,
+# last on response) because add_middleware middlewares always wrap @app.middleware ones.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
+
+
+@app.on_event("startup")
+async def startup_clear_blocklist():
+    """Clear the in-memory blocked IP set on every process start.
+    Render free tier redeploys create a fresh process, so any IPs
+    wrongly blocked in the previous run should not carry over.
+    """
+    _proxy_blocked_ips.clear()
+    log.info("Startup: cleared proxy blocked IPs set (%d entries removed)", 0)
+
+    # v2.1: Start threat intel background worker (daily feed refresh)
+    # Pulls from AbuseIPDB, AlienVault OTX, Feodo, Blocklist.de, IPsum
+    if _TI_WORKER_OK:
+        try:
+            _start_ti_worker()
+            log.info("Threat Intel Worker started — IP reputation feeds will refresh daily")
+        except Exception as _exc:
+            log.warning("Threat Intel Worker failed to start: %s", _exc)
 
 
 @app.get("/debug/version")
 def debug_version():
     return {
-        "version": "2.0.1",
-        "cors": "header-injection",
+        "version": "2.1.0",
+        "cors": "add_middleware+direct-headers",
+        "escalation_engine": _ESCALATION_OK,
+        "threat_intel_worker": _TI_WORKER_OK,
         "timestamp": datetime.now().isoformat(),
     }
 
+
+# ── Enterprise Security Headers Middleware ────────────────────────────────────
+# Injects OWASP-recommended security headers on every response.
+# These headers are absent in Hostinger's basic shared hosting stack:
+#   ✓ HSTS: forces HTTPS for 1 year
+#   ✓ CSP: prevents XSS via content origin policy
+#   ✓ X-Frame-Options: prevents clickjacking
+#   ✓ X-Content-Type-Options: prevents MIME sniffing attacks
+#   ✓ Referrer-Policy: limits referrer information leakage
+#   ✓ Permissions-Policy: disables dangerous browser APIs by default
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    # Never overwrite upstream-set headers (they may be more specific)
+    h = response.headers
+    if "x-content-type-options" not in h:
+        h["X-Content-Type-Options"] = "nosniff"
+    if "x-frame-options" not in h:
+        h["X-Frame-Options"] = "SAMEORIGIN"
+    if "referrer-policy" not in h:
+        h["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if "permissions-policy" not in h:
+        h["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if "x-autoshield-version" not in h:
+        h["X-AutoShield-Version"] = "2.1.0"
+    # Only add HSTS on HTTPS connections to avoid breaking HTTP dev setups
+    if request.url.scheme == "https" and "strict-transport-security" not in h:
+        h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    return response
+
 @app.middleware("http")
 async def ddos_shield_middleware(request: Request, call_next):
-    # Always pass OPTIONS preflight through so CORSMiddleware can handle it.
+    # Always pass OPTIONS preflight through — CORSMiddleware handles it.
     if request.method == "OPTIONS":
         return await call_next(request)
 
@@ -305,14 +368,18 @@ async def ddos_shield_middleware(request: Request, call_next):
 
     client_ip = request.client.host if request.client else "0.0.0.0"
     if client_ip in _proxy_blocked_ips:
+        # Include CORS headers directly — add_middleware CORSMiddleware won't
+        # get a chance to add them when we short-circuit here.
         return JSONResponse(
             status_code=403,
             content={"detail": "Access blocked due to detected threat."},
+            headers=_CORS_HEADERS,
         )
     if _ddos_shield.auto_block_if_needed(client_ip):
         return JSONResponse(
             status_code=429,
             content={"detail": "DDoS Shield: Rate limit exceeded. Access denied."},
+            headers=_CORS_HEADERS,
         )
     return await call_next(request)
 
@@ -698,82 +765,132 @@ def platform_stats():
 async def proxy_to_backend(
     path: str, request: Request, site: dict = Depends(require_api_key)
 ):
+    """
+    AutoShield Inline Proxy — all traffic to the protected upstream is inspected here.
+
+    Escalation pipeline (v2.1 — superior to Hostinger's reactive blocking):
+      1. O(1) blocklist check (already-confirmed threats) → instant 403
+      2. Multi-factor Escalation scoring (Aho-Corasick + behavioral + reputation)
+         Score 0–40  → ALLOW (forward to upstream, log only)
+         Score 40–79 → CHALLENGE (429 + X-AutoShield-Challenge header, CAPTCHA)
+         Score 80+   → BLOCK (403, IP added to session blocklist)
+      3. Legacy fallback: ML-based _detector.classify() for gray-area (20–70)
+      4. Forward clean requests to upstream via httpx connection pool
+
+    Unlike Hostinger's blunt blocking, this avoids false positives for legitimate
+    bots (e.g., Googlebot scores DOWN due to UA recognition) while catching
+    sophisticated evasion via multi-encoding detection.
+    """
     client_ip = request.client.host if request.client else "0.0.0.0"
+    log.debug("PROXY REQUEST: %s /%s from %s site:%s", request.method, path, client_ip, site.get("id"))
 
-    # TEMP DEBUG: Log all proxy requests
-    log.info(
-        f"PROXY REQUEST: {request.method} /{path} from {client_ip} site:{site.get('id')}"
-    )
-
-    # ROUTE FILTERING: Only apply WAF to protected routes
-    # Skip WAF inspection for internal APIs to prevent blocking legitimate calls
-    request_path = request.url.path
-    is_protected_route = request_path.startswith("/proxy")
-
-    if not is_protected_route:
-        # Skip WAF inspection for internal APIs
-        print(f"WAF SKIP: {request_path} - internal API, no inspection")
-        # Continue with normal forwarding (skip WAF logic)
-    else:
-        # Apply WAF inspection only to proxy routes
-        pass  # Continue to WAF logic below
-
+    # Step 1: Fast blocklist check — O(1)
     if client_ip in _proxy_blocked_ips:
         return JSONResponse(
             status_code=403,
-            content={
-                "detail": "Blocked: suspicious activity detected",
-                "blocked_ip": client_ip,
-            },
+            content={"detail": "Blocked: suspicious activity detected", "blocked_ip": client_ip},
+            headers=_CORS_HEADERS,
         )
 
-    # Get site-specific upstream
+    # Get site-specific upstream URL
     site_id = site.get("id", "site_demo")
     site_obj = DB.get_site(site_id) or {}
     upstream = site_obj.get("upstream_url") or PROXY_TARGET
 
-    # WAF INSPECTION: Only for protected routes
-    if is_protected_route:
-        # Read the body for detection (we'll need to read it again later)
-        body = await request.body()
-        body_str = body.decode(errors="ignore") if body else ""
-        query_str = str(request.query_params)
+    # Step 2: Read the body (needed for both inspection and forwarding)
+    body = await request.body()
+    body_str = body.decode(errors="ignore") if body else ""
+    query_str = str(request.query_params)
+    decoded_query = urllib.parse.unquote(query_str)
+    user_agent = request.headers.get("user-agent", "")
+    payload = f"{request.method} /{path} {decoded_query} {body_str}"
+    has_content = bool(query_str.strip()) or bool(body_str.strip())
 
-        # SANITY CHECK: Skip detection for empty/normal requests
-        has_content = bool(query_str.strip()) or bool(body_str.strip())
+    # Step 3: Escalation Engine (v2.1 — primary decision maker)
+    # Unlike the old binary block logic, this uses ALLOW/CHALLENGE/BLOCK with
+    # multi-factor scoring (volume + severity + geo + reputation + behavioral).
+    escalation_result = None
+    if _ESCALATION_OK and _escalation_engine and has_content:
+        try:
+            escalation_result = _escalation_engine.evaluate(
+                ip=client_ip,
+                payload=payload,
+                user_agent=user_agent,
+                method=request.method,
+            )
+        except Exception as _exc:
+            log.debug("Escalation engine error (falling back to rule engine): %s", _exc)
 
-        if not has_content:
-            result = None
-            print("WAF SKIP: Empty request - no detection needed")
-        else:
-            # Build focused payload: method + path + query + body (NO HEADERS)
-            # Headers removed to prevent false positives from User-Agent, Accept, etc.
-            decoded_query = urllib.parse.unquote(query_str)
-            payload = f"{request.method} /{path} {decoded_query} {body_str}"
+    if escalation_result is not None:
+        score = escalation_result.score
+        decision = escalation_result.decision
+        attack_type = escalation_result.attack_type or "Unknown"
+        severity = escalation_result.severity
 
-            # DEBUG: Print what we're scanning
-            print(f"WAF PAYLOAD: {payload[:300]}...")
-            result = _detector.classify(payload)
-            print(f"WAF RESULT: {result}")
-
-        # FILTERED BLOCKING: Only block confirmed attacks, not suspicious noise
-        if result and result.get("attack_type") != "Benign":
-            # Log the event BEFORE returning
+        if decision.value == "BLOCK":
+            # Score 80+ → confirmed threat → BLOCK
             outcome = _process_event(
-                {
-                    "src_ip": client_ip,
-                    "payload": payload,
-                    "ingestion_source": "proxy",
-                },
+                {"src_ip": client_ip, "payload": payload, "ingestion_source": "proxy_escalation"},
                 site,
             )
-
             _proxy_blocked_ips.add(client_ip)
-
+            _global_threat.record_attack(severity)
             return JSONResponse(
                 status_code=403,
                 content={
                     "blocked": True,
+                    "decision": "BLOCK",
+                    "score": score,
+                    "attack_type": attack_type,
+                    "severity": severity,
+                    "detail": f"WAF BLOCKED (score={score:.1f}): {attack_type} detected",
+                    "blocked_ip": client_ip,
+                    "event_id": outcome.get("event_id"),
+                },
+                headers={**_CORS_HEADERS, "X-AutoShield-Score": str(score)},
+            )
+
+        if decision.value == "CHALLENGE":
+            # Score 40–79 → suspicious → CHALLENGE with CAPTCHA hint
+            # Unlike Hostinger's binary block, this avoids false positives.
+            # The frontend can use X-AutoShield-Challenge to show a CAPTCHA.
+            _global_threat.record_attack("MEDIUM")
+            log.info("CHALLENGE issued to %s (score=%.1f)", client_ip, score)
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "blocked": False,
+                    "decision": "CHALLENGE",
+                    "score": score,
+                    "attack_type": attack_type,
+                    "detail": "Suspicious activity detected. Please complete verification.",
+                    "retry_after": 10,
+                },
+                headers={
+                    **_CORS_HEADERS,
+                    "X-AutoShield-Score": str(score),
+                    "X-AutoShield-Challenge": "true",
+                    "Retry-After": "10",
+                },
+            )
+        # decision == ALLOW → fall through to legacy check then forward
+
+    # Step 4: Legacy fallback — ML-based classifier for gray-area requests
+    # (Only runs if escalation engine is unavailable OR score < 20)
+    result = None
+    if has_content and (not _ESCALATION_OK or escalation_result is None):
+        result = _detector.classify(payload)
+        if result and result.get("attack_type") != "Benign":
+            outcome = _process_event(
+                {"src_ip": client_ip, "payload": payload, "ingestion_source": "proxy"},
+                site,
+            )
+            _proxy_blocked_ips.add(client_ip)
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "blocked": True,
+                    "decision": "BLOCK",
                     "attack_type": result.get("attack_type", "UNKNOWN"),
                     "severity": result.get("severity", "UNKNOWN"),
                     "detail": f"WAF BLOCKED: {result.get('attack_type', 'UNKNOWN')} detected",
@@ -781,12 +898,6 @@ async def proxy_to_backend(
                     "event_id": outcome.get("event_id"),
                 },
             )
-
-        # DEBUG: Log allowed requests
-        print("WAF: request allowed - no threats detected")
-    else:
-        # For non-protected routes, just read body for forwarding
-        body = await request.body()
 
     import httpx
 

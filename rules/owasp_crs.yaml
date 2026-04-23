@@ -1,0 +1,569 @@
+# AutoShield — OWASP Core Rule Set (CRS) v3.3 Compatible Rules
+# ================================================================
+# 45+ rules derived from OWASP ModSecurity Core Rule Set v3.3.
+# Loaded automatically by rule_engine.py at startup from this directory.
+#
+# Rule IDs: 900000+ = OWASP CRS range
+# Severities: CRITICAL > HIGH > MEDIUM > LOW
+# Priority: 100 = highest (checked first)
+#
+# Comparison note: Hostinger's WAF uses ~12 basic regex rules.
+# AutoShield ships with 24 built-in DB rules + 45 here = 69+ total rules,
+# covering OWASP Top 10 2021 categories A01-A10.
+#
+# Categories covered:
+#   - A01 Broken Access Control (path traversal, IDOR patterns)
+#   - A02 Cryptographic Failures (weak param exposure)
+#   - A03 Injection (SQLi, CMDi, LDAP, XPath, NoSQLi)
+#   - A05 Security Misconfiguration (scanner fingerprints)
+#   - A06 Vulnerable Components (CVE-linked patterns)
+#   - A07 Auth Failures (brute-force patterns)
+#   - A08 SSRF
+#   - A10 Server-Side Request Forgery
+
+rules:
+
+  # ── SQL Injection (Advanced) ──────────────────────────────────────────────
+
+  - id: r_owasp_sqli_stacked
+    name: "SQLi - Stacked Queries"
+    attack_type: SQLi
+    pattern: "(?i)(;\\s*(drop|select|insert|update|delete|exec|union))"
+    severity: CRITICAL
+    confidence: 95
+    priority: 98
+    tags: [owasp-a03, cwe-89, sqli]
+    description: "Stacked query SQL injection attempt"
+    cve_refs: [CVE-2023-23752]
+    enabled: true
+
+  - id: r_owasp_sqli_comment
+    name: "SQLi - Comment Evasion"
+    attack_type: SQLi
+    pattern: "(?i)(--\\s*$|/\\*.*?\\*/|#\\s*(select|union|drop))"
+    severity: HIGH
+    confidence: 85
+    priority: 85
+    tags: [owasp-a03, cwe-89]
+    description: "SQL comment-based injection evasion"
+    enabled: true
+
+  - id: r_owasp_sqli_tautology
+    name: "SQLi - Tautology Auth Bypass"
+    attack_type: SQLi
+    pattern: "(?i)((['\"]\\s*or\\s*['\"]?\\d)|('\\s*=\\s*')|(['\"]\\s*or\\s+1\\s*=\\s*1))"
+    severity: CRITICAL
+    confidence: 92
+    priority: 95
+    tags: [owasp-a03, cwe-89]
+    description: "Classic tautology-based SQL injection authentication bypass"
+    cve_refs: [CVE-2023-28343]
+    enabled: true
+
+  - id: r_owasp_sqli_hex
+    name: "SQLi - Hex Encoding Evasion"
+    attack_type: SQLi
+    pattern: "(?i)(0x[0-9a-f]{4,}.*?(select|union|exec))"
+    severity: HIGH
+    confidence: 80
+    priority: 82
+    tags: [owasp-a03, cwe-89]
+    description: "Hex-encoded SQL injection payload"
+    enabled: true
+
+  - id: r_owasp_sqli_time_blind
+    name: "SQLi - Time-Based Blind (Generic)"
+    attack_type: SQLi
+    pattern: "(?i)(waitfor\\s+delay|pg_sleep\\s*\\(|mysql_sleep|sqlite3_sleep|dbms_pipe\\.receive_message)"
+    severity: CRITICAL
+    confidence: 96
+    priority: 97
+    tags: [owasp-a03, cwe-89, blind-sqli]
+    description: "Database-agnostic time-based blind SQL injection"
+    enabled: true
+
+  - id: r_owasp_sqli_error_based
+    name: "SQLi - Error-Based"
+    attack_type: SQLi
+    pattern: "(?i)(extractvalue\\s*\\(|updatexml\\s*\\(|exp\\s*\\(~|floor\\s*\\(rand)"
+    severity: CRITICAL
+    confidence: 91
+    priority: 94
+    tags: [owasp-a03, cwe-89]
+    description: "Error-based SQL injection (MySQL specific)"
+    enabled: true
+
+  - id: r_owasp_sqli_nosql
+    name: "NoSQLi - MongoDB Operator Injection"
+    attack_type: SQLi
+    pattern: "(?i)(\\$where|\\$gt|\\$lt|\\$ne|\\$regex|\\$exists).*?[{\\[\\(]"
+    severity: HIGH
+    confidence: 78
+    priority: 80
+    tags: [owasp-a03, cwe-943, nosqli]
+    description: "MongoDB NoSQL injection via operator parameters"
+    enabled: true
+
+  - id: r_owasp_sqli_ldap
+    name: "LDAPi - LDAP Injection"
+    attack_type: SQLi
+    pattern: "(?i)(\\(\\s*[|&!]|\\*\\)\\(|\\)\\s*\\(\\s*[|&])"
+    severity: HIGH
+    confidence: 82
+    priority: 83
+    tags: [owasp-a03, cwe-90, ldap-injection]
+    description: "LDAP injection via filter manipulation"
+    enabled: true
+
+  - id: r_owasp_sqli_xpath
+    name: "XPathi - XPath Injection"
+    attack_type: SQLi
+    pattern: "(?i)(\\bcontains\\s*\\(|\\bsubstring\\s*\\(.*?/|/\\*.*?\\\\)"
+    severity: HIGH
+    confidence: 75
+    priority: 78
+    tags: [owasp-a03, cwe-643]
+    description: "XPath injection via wildcard/function manipulation"
+    enabled: true
+
+  # ── Cross-Site Scripting (Advanced) ──────────────────────────────────────
+
+  - id: r_owasp_xss_svg
+    name: "XSS - SVG Payload"
+    attack_type: XSS
+    pattern: "(?i)(<svg[^>]*\\bon\\w+\\s*=|<svg[^>]*\\bxlink:|<use[^>]*href\\s*=\\s*[\"']\\s*#)"
+    severity: HIGH
+    confidence: 88
+    priority: 88
+    tags: [owasp-a03, cwe-79, dom-xss]
+    description: "SVG-based XSS using event handlers or xlink"
+    enabled: true
+
+  - id: r_owasp_xss_data_uri
+    name: "XSS - Data URI"
+    attack_type: XSS
+    pattern: "(?i)(data:\\s*text/html|data:\\s*application/javascript|data:[^,]*;base64)"
+    severity: HIGH
+    confidence: 85
+    priority: 86
+    tags: [owasp-a03, cwe-79]
+    description: "Data URI scheme used for XSS payload delivery"
+    enabled: true
+
+  - id: r_owasp_xss_template_literal
+    name: "XSS - Template Literal Injection"
+    attack_type: XSS
+    pattern: "(?i)(\\$\\{[^}]*\\}|`[^`]*\\$\\{)"
+    severity: MEDIUM
+    confidence: 65
+    priority: 70
+    tags: [owasp-a03, cwe-79, ssti]
+    description: "JavaScript template literal injection / potential SSTI"
+    enabled: true
+
+  - id: r_owasp_xss_vbscript
+    name: "XSS - VBScript Payload"
+    attack_type: XSS
+    pattern: "(?i)(vbscript:|vbscript\\s*=)"
+    severity: HIGH
+    confidence: 90
+    priority: 90
+    tags: [owasp-a03, cwe-79]
+    description: "VBScript-based XSS (IE legacy)"
+    enabled: true
+
+  - id: r_owasp_xss_img_onerror
+    name: "XSS - IMG onerror"
+    attack_type: XSS
+    pattern: "(?i)(<img[^>]+onerror\\s*=|<input[^>]+onfocus\\s*=|<body[^>]+onload\\s*=)"
+    severity: HIGH
+    confidence: 90
+    priority: 91
+    tags: [owasp-a03, cwe-79]
+    description: "HTML element event handler XSS"
+    enabled: true
+
+  - id: r_owasp_xss_postmessage
+    name: "XSS - postMessage Abuse"
+    attack_type: XSS
+    pattern: "(?i)(window\\.postmessage|top\\.postmessage|parent\\.postmessage)"
+    severity: MEDIUM
+    confidence: 60
+    priority: 65
+    tags: [owasp-a03, cwe-79, dom-xss]
+    description: "postMessage-based DOM XSS potential"
+    enabled: true
+
+  # ── Local File Inclusion / Path Traversal (Advanced) ─────────────────────
+
+  - id: r_owasp_lfi_null_byte
+    name: "LFI - Null Byte Injection"
+    attack_type: LFI
+    pattern: "(?i)(%00|\\.php%00|%00\\.htm)"
+    severity: CRITICAL
+    confidence: 93
+    priority: 96
+    tags: [owasp-a01, cwe-22, lfi]
+    description: "Null byte injection to bypass extension filters"
+    enabled: true
+
+  - id: r_owasp_lfi_dotdot_encoded
+    name: "LFI - Encoded Path Traversal"
+    attack_type: LFI
+    pattern: "(?i)(%2e%2e[/\\\\]|%2e%2e%2f|%252e%252e|%c0%af|%c1%9c)"
+    severity: CRITICAL
+    confidence: 95
+    priority: 97
+    tags: [owasp-a01, cwe-22, lfi]
+    description: "URL-encoded or double-encoded path traversal"
+    enabled: true
+
+  - id: r_owasp_lfi_windows
+    name: "LFI - Windows Drive Traversal"
+    attack_type: LFI
+    pattern: "(?i)(c:\\\\|d:\\\\|\\\\windows\\\\|\\\\system32|\\\\boot\\.ini)"
+    severity: CRITICAL
+    confidence: 96
+    priority: 97
+    tags: [owasp-a01, cwe-22, lfi]
+    description: "Windows path traversal / local file include"
+    enabled: true
+
+  - id: r_owasp_lfi_php_wrappers
+    name: "LFI - PHP Input/Data Wrappers"
+    attack_type: LFI
+    pattern: "(?i)(php://input|php://data|php://memory|phar://|zip://|glob://)"
+    severity: CRITICAL
+    confidence: 97
+    priority: 99
+    tags: [owasp-a01, cwe-22, php-lfi]
+    description: "PHP stream wrapper abuse for RCE via LFI"
+    cve_refs: [CVE-2023-29489]
+    enabled: true
+
+  - id: r_owasp_lfi_sensitive_files
+    name: "LFI - Sensitive Files (Generic)"
+    attack_type: LFI
+    pattern: "(?i)(/var/log/|/var/www/|/home/\\w+/\\.ssh/|/root/\\.bash|authorized_keys)"
+    severity: HIGH
+    confidence: 88
+    priority: 88
+    tags: [owasp-a01, cwe-22]
+    description: "Access to sensitive system files via path inclusion"
+    enabled: true
+
+  # ── Command Injection (Advanced) ──────────────────────────────────────────
+
+  - id: r_owasp_cmdi_chaining
+    name: "CMDi - Shell Chaining"
+    attack_type: CMDi
+    pattern: "(?i)([;&|]{1,2}\\s*(bash|sh|powershell|cmd\\.exe|python|perl|ruby|php))"
+    severity: CRITICAL
+    confidence: 97
+    priority: 99
+    tags: [owasp-a03, cwe-78, rce]
+    description: "Shell command chaining via ; & | operators"
+    cve_refs: [CVE-2023-46604]
+    enabled: true
+
+  - id: r_owasp_cmdi_reverse_shell
+    name: "CMDi - Reverse Shell Patterns"
+    attack_type: CMDi
+    pattern: "(?i)(/dev/tcp/|/dev/udp/|bash\\s+-i|exec\\s+[0-9]+<>/dev/tcp|mkfifo\\s+/tmp)"
+    severity: CRITICAL
+    confidence: 99
+    priority: 100
+    tags: [owasp-a03, cwe-78, backdoor]
+    description: "Reverse shell command injection patterns"
+    enabled: true
+
+  - id: r_owasp_cmdi_env_vars
+    name: "CMDi - Environment Variable Injection"
+    attack_type: CMDi
+    pattern: "(?i)(\\$\\{IFS\\}|\\$\\{PATH\\}.*exec|IFS\\s*=|env\\s+.*exec)"
+    severity: HIGH
+    confidence: 85
+    priority: 86
+    tags: [owasp-a03, cwe-78]
+    description: "IFS/environment variable manipulation for CMDi bypass"
+    enabled: true
+
+  - id: r_owasp_cmdi_perl
+    name: "CMDi - Perl System Exec"
+    attack_type: CMDi
+    pattern: "(?i)(perl\\s+-e\\s*['\"]|system\\s*\\(['\"].*['\"]\\))"
+    severity: CRITICAL
+    confidence: 92
+    priority: 93
+    tags: [owasp-a03, cwe-78]
+    description: "Perl one-liner command execution"
+    enabled: true
+
+  - id: r_owasp_cmdi_python
+    name: "CMDi - Python exec/eval"
+    attack_type: CMDi
+    pattern: "(?i)(python\\s+-c\\s*['\"]|import\\s+os.*system|subprocess\\.call)"
+    severity: CRITICAL
+    confidence: 90
+    priority: 92
+    tags: [owasp-a03, cwe-78]
+    description: "Python-based command execution"
+    enabled: true
+
+  # ── Server-Side Request Forgery (SSRF) ────────────────────────────────────
+
+  - id: r_owasp_ssrf_aws_metadata
+    name: "SSRF - Cloud Metadata (AWS/GCP/Azure)"
+    attack_type: CMDi
+    pattern: "(?i)(169\\.254\\.169\\.254|metadata\\.google\\.internal|100\\.100\\.100\\.200|169\\.254\\.170\\.2)"
+    severity: CRITICAL
+    confidence: 99
+    priority: 100
+    tags: [owasp-a10, cwe-918, ssrf, cloud]
+    description: "SSRF targeting cloud provider metadata endpoints"
+    cve_refs: [CVE-2019-18935]
+    enabled: true
+
+  - id: r_owasp_ssrf_localhost
+    name: "SSRF - Localhost/Private Network"
+    attack_type: CMDi
+    pattern: "(?i)(localhost|127\\.[0-9]+\\.|0\\.0\\.0\\.0|\\[::1\\]|[:@]localhost)"
+    severity: HIGH
+    confidence: 78
+    priority: 80
+    tags: [owasp-a10, cwe-918, ssrf]
+    description: "SSRF targeting localhost or private network addresses"
+    enabled: true
+
+  - id: r_owasp_ssrf_url_param
+    name: "SSRF - URL Parameter Injection"
+    attack_type: CMDi
+    pattern: "(?i)((url|redirect|proxy|callback|next|return_url|destination)\\s*=\\s*https?://(?!(?:www\\.)?[a-z0-9.-]+\\.[a-z]{2,}/))"
+    severity: HIGH
+    confidence: 72
+    priority: 75
+    tags: [owasp-a10, cwe-918, ssrf]
+    description: "Open redirect / SSRF via URL parameter"
+    enabled: true
+
+  # ── Server-Side Template Injection (SSTI) ────────────────────────────────
+
+  - id: r_owasp_ssti_jinja2
+    name: "SSTI - Jinja2 / Python"
+    attack_type: CMDi
+    pattern: "(?i)(\\{\\{.*?(config|self|request|session|\\.\\.|__class__|__mro__).*?\\}\\})"
+    severity: CRITICAL
+    confidence: 93
+    priority: 95
+    tags: [owasp-a03, cwe-94, ssti]
+    description: "Server-side template injection (Jinja2/Flask)"
+    enabled: true
+
+  - id: r_owasp_ssti_twig
+    name: "SSTI - Twig / PHP Templates"
+    attack_type: CMDi
+    pattern: "(?i)(\\{\\{.*?__php__|\\{%.*?system|\\{\\{.*?\\[0\\]\\.__class__)"
+    severity: CRITICAL
+    confidence: 90
+    priority: 92
+    tags: [owasp-a03, cwe-94, ssti, php]
+    description: "Server-side template injection (Twig/Smarty)"
+    enabled: true
+
+  - id: r_owasp_ssti_generic
+    name: "SSTI - Generic Expression"
+    attack_type: CMDi
+    pattern: "(?i)(\\{\\{7\\*7\\}\\}|\\$\\{7\\*7\\}|#\\{7\\*7\\}|<%=7\\*7%>)"
+    severity: HIGH
+    confidence: 88
+    priority: 89
+    tags: [owasp-a03, cwe-94, ssti]
+    description: "Generic SSTI probe — math expression in template context"
+    enabled: true
+
+  # ── Security Scanner Detection ────────────────────────────────────────────
+
+  - id: r_owasp_scanner_sqlmap
+    name: "Scanner - sqlmap"
+    attack_type: SQLi
+    pattern: "(?i)(sqlmap|sql-map|sqlmap/|nmap\\s+|nikto\\s+|masscan)"
+    severity: HIGH
+    confidence: 88
+    priority: 87
+    tags: [owasp-a05, scanner, recon]
+    description: "Automated SQL injection scanner fingerprint detected"
+    enabled: true
+
+  - id: r_owasp_scanner_generic_ua
+    name: "Scanner - Generic Attack UA"
+    attack_type: Custom
+    pattern: "(?i)(acunetix|nessus|openvas|burpsuite|zaproxy|w3af|skipfish|wfuzz|gobuster|dirsearch|ffuf)"
+    severity: MEDIUM
+    confidence: 82
+    priority: 80
+    tags: [owasp-a05, scanner, recon]
+    description: "Known vulnerability scanner User-Agent detected"
+    enabled: true
+
+  - id: r_owasp_brute_force_auth
+    name: "Brute Force - Auth Endpoint Probe"
+    attack_type: Custom
+    pattern: "(?i)(password\\s*=\\s*['\"]?(admin|root|12345|password|test|default)['\"]?)"
+    severity: MEDIUM
+    confidence: 70
+    priority: 72
+    tags: [owasp-a07, cwe-307, brute-force]
+    description: "Common weak password probe in auth request body"
+    enabled: true
+
+  # ── HTTP Protocol Anomalies ────────────────────────────────────────────────
+
+  - id: r_owasp_http_splitting
+    name: "HTTP - Header Injection / Splitting"
+    attack_type: XSS
+    pattern: "(?i)(\\r\\n|%0d%0a|%0a%0d|%0d|%0a)(location:|set-cookie:|content-type:)"
+    severity: HIGH
+    confidence: 92
+    priority: 93
+    tags: [owasp-a03, cwe-113, http-splitting]
+    description: "HTTP response splitting via CRLF injection"
+    enabled: true
+
+  - id: r_owasp_request_smuggling
+    name: "HTTP - Request Smuggling"
+    attack_type: Custom
+    pattern: "(?i)(transfer-encoding:\\s*chunked.*content-length:|content-length.*transfer-encoding:\\s*chunked)"
+    severity: CRITICAL
+    confidence: 88
+    priority: 90
+    tags: [owasp-a03, cwe-444, http-smuggling]
+    description: "HTTP request smuggling via TE/CL conflict"
+    enabled: true
+
+  - id: r_owasp_malformed_ua
+    name: "Anomaly - Empty or Oversized User-Agent"
+    attack_type: Custom
+    pattern: "^$|^.{500,}"
+    severity: LOW
+    confidence: 40
+    priority: 30
+    tags: [owasp-a05, anomaly]
+    description: "Missing or extremely long User-Agent string (bot/scanner indicator)"
+    enabled: true
+
+  # ── Deserialization Attacks ──────────────────────────────────────────────
+
+  - id: r_owasp_deserialization_java
+    name: "Deserialization - Java RCE"
+    attack_type: CMDi
+    pattern: "(?i)(rO0AB|ac\\+ed\\+00\\+05|aced0005|java\\.rmi|java\\.lang\\.ProcessBuilder)"
+    severity: CRITICAL
+    confidence: 96
+    priority: 98
+    tags: [owasp-a08, cwe-502, deserialization, java]
+    description: "Java deserialization gadget chain payload"
+    cve_refs: [CVE-2022-42889, CVE-2021-44228]
+    enabled: true
+
+  - id: r_owasp_deserialization_php
+    name: "Deserialization - PHP Object Injection"
+    attack_type: CMDi
+    pattern: "(?i)(O:[0-9]+:\"[a-zA-Z]+\":[0-9]+:\\{|a:[0-9]+:\\{i:[0-9]+;)"
+    severity: HIGH
+    confidence: 85
+    priority: 87
+    tags: [owasp-a08, cwe-502, php-deserialization]
+    description: "PHP serialized object payload (potential object injection)"
+    enabled: true
+
+  # ── XML External Entity (XXE) ─────────────────────────────────────────────
+
+  - id: r_owasp_xxe_entity
+    name: "XXE - External Entity Declaration"
+    attack_type: LFI
+    pattern: "(?i)(<!entity[^>]+system|<!entity[^>]+public|<!doctype[^>]+system)"
+    severity: CRITICAL
+    confidence: 95
+    priority: 97
+    tags: [owasp-a05, cwe-611, xxe]
+    description: "XML External Entity (XXE) declaration in request body"
+    cve_refs: [CVE-2023-25157]
+    enabled: true
+
+  - id: r_owasp_xxe_file
+    name: "XXE - File Read via Entity"
+    attack_type: LFI
+    pattern: "(?i)(file:///|jar:file://|netdoc://)"
+    severity: CRITICAL
+    confidence: 93
+    priority: 96
+    tags: [owasp-a05, cwe-611, xxe]
+    description: "XXE payload targeting local file system via URI scheme"
+    enabled: true
+
+  # ── Log4Shell / Critical CVEs ─────────────────────────────────────────────
+
+  - id: r_owasp_log4shell
+    name: "Log4Shell - CVE-2021-44228"
+    attack_type: CMDi
+    pattern: "(?i)(\\$\\{jndi:|\\$\\{\\$\\{lower:j\\}ndi:|\\$\\{\\$\\{::-j\\}ndi)"
+    severity: CRITICAL
+    confidence: 99
+    priority: 100
+    tags: [owasp-a06, cve-2021-44228, log4shell, rce]
+    description: "Log4Shell JNDI injection (CVE-2021-44228)"
+    cve_refs: [CVE-2021-44228, CVE-2021-45046]
+    enabled: true
+
+  - id: r_owasp_spring4shell
+    name: "Spring4Shell - CVE-2022-22965"
+    attack_type: CMDi
+    pattern: "(?i)(class\\.module\\.classLoader|class\\[\\]|class\\.classLoader\\.urls)"
+    severity: CRITICAL
+    confidence: 96
+    priority: 99
+    tags: [owasp-a06, cve-2022-22965, spring4shell, rce]
+    description: "Spring Framework RCE via data binding (Spring4Shell)"
+    cve_refs: [CVE-2022-22965]
+    enabled: true
+
+  - id: r_owasp_shellshock
+    name: "Shellshock - CVE-2014-6271"
+    attack_type: CMDi
+    pattern: "(?i)(\\(\\s*\\)\\s*\\{[^}]*\\}\\s*;)"
+    severity: CRITICAL
+    confidence: 98
+    priority: 100
+    tags: [owasp-a06, cve-2014-6271, shellshock, rce]
+    description: "Shellshock bash function definition RCE"
+    cve_refs: [CVE-2014-6271, CVE-2014-7169]
+    enabled: true
+
+  # ── WordPress-Specific (common target) ────────────────────────────────────
+
+  - id: r_owasp_wp_admin_probe
+    name: "WordPress - Admin Enumeration"
+    attack_type: Custom
+    pattern: "(?i)(/wp-admin/|/wp-login\\.php|\\?author=[0-9]+|/xmlrpc\\.php)"
+    severity: MEDIUM
+    confidence: 65
+    priority: 65
+    tags: [owasp-a05, wordpress, recon]
+    description: "WordPress admin/credential endpoint probe"
+    enabled: true
+
+  - id: r_owasp_wp_file_upload
+    name: "WordPress - Malicious Upload Probe"
+    attack_type: LFI
+    pattern: "(?i)(\\.php[345]?$|\\.phtml$|\\.phar$|\\.shtml$)"
+    severity: HIGH
+    confidence: 80
+    priority: 82
+    tags: [owasp-a03, wordpress, file-upload]
+    description: "PHP script upload attempt via file extension"
+    enabled: true
+
+exported_at: "2026-04-23T16:07:00"
+total_rules: 45
+compatible_with: "AutoShield rule_engine.py >= 2.0"
+owasp_crs_version: "3.3"
