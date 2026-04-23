@@ -15,8 +15,10 @@ scikit-learn>=1.3.0
 redis>=5.0.0
 # Aho-Corasick C extension — O(n) multi-keyword pre-filter (10x faster than regex-only)
 # Falls back gracefully to pure-Python substring scan if unavailable
-pyahocorasick>=2.0.0
+# OPTIONAL: requires C compiler. Uncomment if your build env supports it:
+# pyahocorasick>=2.0.0
 # Async file I/O — used by nginx log agent and cert generation
 aiofiles>=23.0.0
 # PostgreSQL client — required when DATABASE_URL=postgresql://...
-psycopg2-binary>=2.9.0
+# OPTIONAL: requires C compiler. Uncomment for PostgreSQL deployments:
+# psycopg2-binary>=2.9.0
