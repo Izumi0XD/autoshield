@@ -3204,6 +3204,27 @@ function Dashboard() {
         </div>
       </div>
 
+      {/* Protection Status Banner */}
+      {(() => {
+        const conn = engine.getConnection();
+        const protStatus = threatScore >= 70 ? 'attack' : !conn.online ? 'misconfigured' : 'protected';
+        const statusConfig = {
+          protected: { icon: '✅', label: 'PROTECTED', desc: 'All systems operational. AutoShield is actively monitoring.', color: '#3fb950', bg: 'rgba(63,185,80,0.08)', border: 'rgba(63,185,80,0.2)' },
+          attack: { icon: '⚠️', label: 'UNDER ATTACK', desc: `Active threat detected (score: ${threatScore}). Mitigation engaged.`, color: '#f0883e', bg: 'rgba(240,136,62,0.08)', border: 'rgba(240,136,62,0.3)' },
+          misconfigured: { icon: '❌', label: 'DISCONNECTED', desc: 'Backend unreachable. Check API connectivity.', color: '#f85149', bg: 'rgba(248,81,73,0.08)', border: 'rgba(248,81,73,0.2)' },
+        };
+        const s = statusConfig[protStatus];
+        return (
+          <div style={{ background: s.bg, border: `1px solid ${s.border}`, borderRadius: 12, padding: '14px 20px', marginBottom: 24, display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span style={{ fontSize: 22 }}>{s.icon}</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: s.color, letterSpacing: '0.05em' }}>{s.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--e-muted)' }}>{s.desc}</div>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="metrics-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '20px', marginBottom: '40px' }}>
         <div className="glass-card">
           <div className="metric-label" style={{ color: 'var(--e-muted)', fontSize: '12px' }}>TOTAL EVENTS</div>
@@ -3405,7 +3426,23 @@ function CommandCenter({ log, chartData, trafficWindow, setTrafficWindow, threat
                   <span style={{ color: SEV_COLORS[ev.severity], fontWeight: 700, width: 50 }}>{ev.severity.slice(0, 4)}</span>
                   <span style={{ color: TYPE_COLORS[ev.attack_type], width: 60 }}>{ev.attack_type}</span>
                   <span style={{ color: 'var(--text)', width: 110 }}>{ev.src_ip}</span>
-                  <span style={{ color: ev.action === 'BLOCKED' ? 'var(--green)' : 'var(--yellow)', width: 70 }}>{ev.action}</span>
+                  {/* Decision Badge: ALLOW / CHALLENGE / BLOCK */}
+                  {(() => {
+                    const decision = ev.decision || (ev.action === 'BLOCKED' ? 'BLOCK' : ev.action === 'CHALLENGED' ? 'CHALLENGE' : 'ALLOW');
+                    const badgeConfig = {
+                      BLOCK: { color: '#f85149', bg: 'rgba(248,81,73,0.15)', label: 'BLOCK' },
+                      CHALLENGE: { color: '#f0883e', bg: 'rgba(240,136,62,0.15)', label: 'CHALLENGE' },
+                      ALLOW: { color: '#3fb950', bg: 'rgba(63,185,80,0.15)', label: 'ALLOW' },
+                    };
+                    const b = badgeConfig[decision] || badgeConfig.ALLOW;
+                    return (
+                      <span style={{
+                        fontSize: 9, fontWeight: 800, color: b.color, background: b.bg,
+                        padding: '2px 8px', borderRadius: 4, border: `1px solid ${b.color}33`,
+                        fontFamily: 'var(--mono)', letterSpacing: '0.06em', width: 72, textAlign: 'center',
+                      }}>{b.label}</span>
+                    );
+                  })()}
                   <span style={{ color: STATUS_COLORS[normalizeEventStatus(ev.status)] || 'var(--muted2)', width: 90 }}>{normalizeEventStatus(ev.status)}</span>
                   <span className="payload-snip">{ev.payload || ev.payload_snip || 'N/A'}</span>
                 </motion.div>
@@ -5792,13 +5829,25 @@ function ManageSite() {
           {recentLog.length === 0 && <div className="feed-empty">🟢 No traffic yet — fire a curl request at {site.url} to see it here</div>}
           {recentLog.map((ev) => {
             const isBenign = ev.attack_type === 'Benign' || ev.severity === 'INFO';
+            const decision = ev.decision || (ev.action === 'BLOCKED' ? 'BLOCK' : ev.action === 'CHALLENGED' ? 'CHALLENGE' : 'ALLOW');
+            const badgeConfig = {
+              BLOCK: { color: '#f85149', bg: 'rgba(248,81,73,0.15)', label: 'BLOCK' },
+              CHALLENGE: { color: '#f0883e', bg: 'rgba(240,136,62,0.15)', label: 'CHALLENGE' },
+              ALLOW: { color: '#3fb950', bg: 'rgba(63,185,80,0.15)', label: 'ALLOW' },
+            };
+            const b = badgeConfig[decision] || badgeConfig.ALLOW;
             return (
               <div className="feed-item" key={ev.id} style={isBenign ? { opacity: 0.7 } : {}}>
                 <span style={{ color: 'var(--muted2)' }}>{ev.timestamp?.slice(11, 19)}</span>
                 <span style={{ color: isBenign ? '#4A6080' : SEV_COLORS[ev.severity], fontWeight: 600 }}>{isBenign ? 'VISIT' : `[${ev.severity?.slice(0, 4)}]`}</span>
                 <span style={{ color: isBenign ? '#4A6080' : TYPE_COLORS[ev.attack_type] }}>{isBenign ? '🌐 Visitor' : ev.attack_type}</span>
                 <span style={{ color: 'var(--text)' }}>{ev.src_ip}</span>
-                <span style={{ color: isBenign ? 'var(--e-muted)' : ev.action === 'BLOCKED' ? 'var(--green)' : 'var(--yellow)' }}>{isBenign ? 'ALLOWED' : ev.action}</span>
+                {/* Decision Badge */}
+                <span style={{
+                  fontSize: 9, fontWeight: 800, color: b.color, background: b.bg,
+                  padding: '2px 8px', borderRadius: 4, border: `1px solid ${b.color}33`,
+                  fontFamily: 'var(--mono)', letterSpacing: '0.06em',
+                }}>{b.label}</span>
                 <span style={{ color: isBenign ? '#4A6080' : 'var(--cyan)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '220px' }}>{ev.payload}</span>
               </div>
             );

@@ -41,6 +41,7 @@ try:
         JSONResponse,
         RedirectResponse,
         FileResponse,
+        HTMLResponse,
     )
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel, Field
@@ -87,6 +88,17 @@ try:
     _TI_WORKER_OK = True
 except Exception:
     _TI_WORKER_OK = False
+
+try:
+    from challenge_page import (
+        generate_challenge, verify_solution, create_bypass_cookie,
+        validate_bypass_cookie, render_challenge_html, COOKIE_NAME as CHALLENGE_COOKIE,
+        get_challenge_stats, record_issued, record_solved, record_failed, record_bypassed,
+    )
+    _CHALLENGE_OK = True
+except Exception as _exc:
+    _CHALLENGE_OK = False
+    log.warning("Challenge system not available (non-fatal): %s", _exc)
 _proxy_blocked_ips = set()
 
 _detector = AttackDetector()
@@ -851,28 +863,51 @@ async def proxy_to_backend(
             )
 
         if decision.value == "CHALLENGE":
-            # Score 40–79 → suspicious → CHALLENGE with CAPTCHA hint
-            # Unlike Hostinger's binary block, this avoids false positives.
-            # The frontend can use X-AutoShield-Challenge to show a CAPTCHA.
-            _global_threat.record_attack("MEDIUM")
-            log.info("CHALLENGE issued to %s (score=%.1f)", client_ip, score)
-            return JSONResponse(
-                status_code=429,
-                content={
-                    "blocked": False,
-                    "decision": "CHALLENGE",
-                    "score": score,
-                    "attack_type": attack_type,
-                    "detail": "Suspicious activity detected. Please complete verification.",
-                    "retry_after": 10,
-                },
-                headers={
-                    **_CORS_HEADERS,
-                    "X-AutoShield-Score": str(score),
-                    "X-AutoShield-Challenge": "true",
-                    "Retry-After": "10",
-                },
-            )
+            # Score 40–79 → suspicious → serve JS challenge if available
+            # Check for valid bypass cookie first
+            if _CHALLENGE_OK:
+                cookie_val = request.cookies.get(CHALLENGE_COOKIE, "")
+                if validate_bypass_cookie(cookie_val, client_ip):
+                    record_bypassed()
+                    log.debug("Challenge bypass cookie valid for %s", client_ip)
+                    pass  # fall through to ALLOW (bypass is valid)
+                else:
+                    # Serve the JS challenge HTML page
+                    _global_threat.record_attack("MEDIUM")
+                    record_issued()
+                    log.info("CHALLENGE page served to %s (score=%.1f)", client_ip, score)
+                    challenge = generate_challenge(client_ip, path=str(request.url.path))
+                    html = render_challenge_html(challenge, original_url=str(request.url))
+                    return HTMLResponse(
+                        content=html,
+                        status_code=429,
+                        headers={
+                            **_CORS_HEADERS,
+                            "X-AutoShield-Score": str(score),
+                            "X-AutoShield-Challenge": "true",
+                        },
+                    )
+            else:
+                # Challenge module unavailable — fallback to JSON response
+                _global_threat.record_attack("MEDIUM")
+                log.info("CHALLENGE (JSON fallback) to %s (score=%.1f)", client_ip, score)
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "blocked": False,
+                        "decision": "CHALLENGE",
+                        "score": score,
+                        "attack_type": attack_type,
+                        "detail": "Suspicious activity detected. Please complete verification.",
+                        "retry_after": 10,
+                    },
+                    headers={
+                        **_CORS_HEADERS,
+                        "X-AutoShield-Score": str(score),
+                        "X-AutoShield-Challenge": "true",
+                        "Retry-After": "10",
+                    },
+                )
         # decision == ALLOW → fall through to legacy check then forward
 
     # Step 4: Legacy fallback — ML-based classifier for gray-area requests
@@ -945,6 +980,159 @@ def unblock_ip_admin(ip: str):
         _proxy_blocked_ips.discard(ip)
         return {"success": True, "unblocked": ip}
     return {"success": False, "detail": "IP not found"}
+
+
+# ── Challenge System Endpoints ────────────────────────────────────────────────
+
+class ChallengeVerifyRequest(BaseModel):
+    challenge_id: str
+    prefix: str
+    nonce: str
+    timestamp: int
+    signature: str
+
+@app.post("/challenge/verify", tags=["challenge"])
+async def verify_challenge(req: ChallengeVerifyRequest, request: Request):
+    """Verify a JS challenge solution and issue a bypass cookie."""
+    if not _CHALLENGE_OK:
+        raise HTTPException(status_code=501, detail="Challenge system not available")
+
+    client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if not client_ip and request.client:
+        client_ip = request.client.host
+
+    ok, reason = verify_solution(
+        challenge_id=req.challenge_id,
+        prefix=req.prefix,
+        nonce=req.nonce,
+        timestamp=req.timestamp,
+        signature=req.signature,
+        client_ip=client_ip,
+    )
+
+    if not ok:
+        record_failed()
+        raise HTTPException(status_code=403, detail=reason)
+
+    record_solved()
+    cookie_value = create_bypass_cookie(client_ip)
+    response = JSONResponse(
+        content={"success": True, "message": "Verification passed"},
+        headers=_CORS_HEADERS,
+    )
+    response.set_cookie(
+        key=CHALLENGE_COOKIE,
+        value=cookie_value,
+        max_age=1800,  # 30 min
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+    return response
+
+@app.get("/challenge/stats", tags=["challenge"])
+def challenge_stats_endpoint():
+    """Return challenge system statistics."""
+    if not _CHALLENGE_OK:
+        return {"available": False}
+    stats = get_challenge_stats()
+    stats["available"] = True
+    return stats
+
+
+# ── Site Integration Setup Guide ──────────────────────────────────────────────
+
+@app.get("/api/setup-guide/{site_id}", tags=["setup"])
+def setup_guide(site_id: str, site: dict = Depends(require_api_key)):
+    """Return copy-paste integration instructions for connecting a site."""
+    domain = site.get("domain", "example.com")
+    api_key = site.get("api_key", "YOUR_API_KEY")
+    server_ip = os.environ.get("AUTOSHIELD_SERVER_IP", "YOUR_AUTOSHIELD_IP")
+    api_host = os.environ.get("RENDER_EXTERNAL_URL", "https://autoshield-api-5rj8.onrender.com")
+
+    return {
+        "site_id": site_id,
+        "domain": domain,
+        "methods": {
+            "dns": {
+                "title": "DNS Proxy Mode (Recommended)",
+                "description": "Point your domain to AutoShield. All traffic flows through our WAF.",
+                "steps": [
+                    f"1. Log in to your DNS provider (Cloudflare, Namecheap, GoDaddy, etc.)",
+                    f"2. Change the A record for '{domain}' to point to: {server_ip}",
+                    f"3. OR create a CNAME record pointing to: {api_host.replace('https://', '')}",
+                    f"4. Set your origin server URL in AutoShield dashboard",
+                    f"5. Wait 5-10 minutes for DNS propagation",
+                    f"6. Verify: curl -I https://{domain} — should show X-AutoShield-Version header",
+                ],
+                "dns_records": [
+                    {"type": "A", "name": domain, "value": server_ip, "ttl": 300},
+                    {"type": "CNAME", "name": domain, "value": api_host.replace("https://", ""), "ttl": 300},
+                ],
+            },
+            "nginx": {
+                "title": "Nginx Reverse Proxy (Self-Hosted)",
+                "description": "Route traffic through your own Nginx to AutoShield.",
+                "config": f"""# /etc/nginx/sites-available/{domain}
+server {{
+    listen 80;
+    server_name {domain};
+
+    location / {{
+        proxy_pass {api_host}/proxy/{site_id};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-AutoShield-Key {api_key};
+
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Timeouts
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 30s;
+    }}
+}}""",
+                "steps": [
+                    "1. Copy the config above to /etc/nginx/sites-available/",
+                    f"2. ln -s /etc/nginx/sites-available/{domain} /etc/nginx/sites-enabled/",
+                    "3. nginx -t && systemctl reload nginx",
+                    f"4. Test: curl -I http://{domain}",
+                ],
+            },
+            "docker": {
+                "title": "Docker Compose (Easiest)",
+                "description": "Run AutoShield in front of any containerized app.",
+                "config": f"""# docker-compose.yml
+version: '3.8'
+services:
+  autoshield:
+    image: ghcr.io/izumi0xd/autoshield:latest
+    ports:
+      - "80:8505"
+    environment:
+      - AUTOSHIELD_UPSTREAM_URL=http://your-app:8080
+      - AUTOSHIELD_API_KEY={api_key}
+    depends_on:
+      - your-app
+
+  your-app:
+    image: your-application-image
+    expose:
+      - "8080"
+""",
+            },
+        },
+        "verification": {
+            "health_url": f"{api_host}/health",
+            "test_block": f"curl '{api_host}/proxy/{site_id}/?id=1%27+OR+1%3D1--'",
+            "test_allow": f"curl '{api_host}/proxy/{site_id}/'",
+            "expected_headers": ["X-AutoShield-Version", "X-Content-Type-Options", "X-Frame-Options"],
+        },
+    }
 
 # ── Auth ──────────────────────────────────────────────────────────────────
 
@@ -1776,6 +1964,14 @@ async def ws_events(websocket: WebSocket):
                 if status == "FP"
                 else "DETECTED"
             )
+            # v2.1: Include decision field for frontend badge display
+            action = ev.get("action", "")
+            if action == "BLOCKED":
+                ev["decision"] = "BLOCK"
+            elif action == "CHALLENGED":
+                ev["decision"] = "CHALLENGE"
+            else:
+                ev["decision"] = "ALLOW"
             await websocket.send_json(ev)
     except WebSocketDisconnect:
         pass
